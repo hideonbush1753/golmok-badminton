@@ -58,6 +58,10 @@
   .mic-on{background:#2fbf71!important}
   #msg{position:absolute;top:24%;left:50%;transform:translateX(-50%);font-size:34px;font-weight:900;color:#fff;
     -webkit-text-stroke:2px #4a2f22;text-shadow:0 4px 0 #4a2f22;white-space:nowrap;transition:opacity .25s;text-align:center}
+  #hint{position:absolute;left:50%;bottom:calc(64px + env(safe-area-inset-bottom));transform:translateX(-50%);background:#fff8ef;border:3px solid #4a2f22;border-radius:999px;
+    padding:5px 14px;font-size:13px;font-weight:900;white-space:nowrap;box-shadow:0 3px 0 #4a2f22;display:none;animation:bob 1s ease-in-out infinite}
+  body.touch #hint{bottom:auto;top:calc(104px + env(safe-area-inset-top))}
+  @keyframes bob{50%{transform:translateX(-50%) translateY(-3px)}}
   #winImg{position:absolute;top:32%;left:50%;transform:translateX(-50%);width:min(240px,50vw);display:none}
   #help{position:absolute;bottom:calc(10px + env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);font-size:12px;font-weight:700;color:#fff;
     background:rgba(58,42,32,.7);padding:6px 12px;border-radius:10px;white-space:nowrap}
@@ -67,9 +71,9 @@
   #gauge .cover{position:absolute;top:0;right:0;bottom:0;background:rgba(255,255,255,.82)}
   #gauge .lbl{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:900;color:#4a2f22}
   #gauge.on{display:block}
-  body.touch #gauge{left:auto;right:18px;transform:none;bottom:calc(150px + env(safe-area-inset-bottom));width:150px}
+  body.touch #gauge{left:auto;right:calc(12px + env(safe-area-inset-right));transform:none;bottom:calc(160px + env(safe-area-inset-bottom));width:150px}
   /* 채팅 */
-  #chatLog{position:absolute;left:8px;bottom:calc(120px + env(safe-area-inset-bottom));width:min(330px,62vw);display:flex;flex-direction:column;gap:3px}
+  #chatLog{position:absolute;left:8px;bottom:calc(176px + env(safe-area-inset-bottom));width:min(330px,62vw);display:flex;flex-direction:column;gap:3px}
   body:not(.touch) #chatLog{bottom:calc(84px + env(safe-area-inset-bottom))}
   #chatLog div{background:rgba(58,42,32,.66);color:#fff;font-size:13px;font-weight:600;padding:4px 9px;border-radius:10px;transition:opacity 1s;word-break:break-all}
   #chatLog b{font-weight:900}
@@ -107,22 +111,33 @@
   #touch.on{display:block}
   #swingZone{position:absolute;inset:0;display:none}
   #touch.player #swingZone{display:block}
-  .mv{position:absolute;bottom:calc(24px + env(safe-area-inset-bottom));width:76px;height:76px;border-radius:50%;background:rgba(255,255,255,.75);
-    border:3px solid #4a2f22;display:none;align-items:center;justify-content:center;font-size:28px;color:#4a2f22;touch-action:none;box-shadow:0 3px 0 #4a2f22}
-  #touch.player .mv{display:flex}
-  .mv.on{background:#ffc93c}
-  #mvL{left:16px}#mvR{left:104px}
-  #joy{position:absolute;left:22px;bottom:calc(28px + env(safe-area-inset-bottom));width:124px;height:124px;border-radius:50%;background:rgba(255,255,255,.45);border:3px solid #4a2f22;display:none;touch-action:none}
-  #touch.walker #joy{display:block}
-  #joyK{position:absolute;left:50%;top:50%;width:54px;height:54px;margin:-27px 0 0 -27px;border-radius:50%;background:#fff;border:3px solid #4a2f22}
+  /* 원형 조이스틱: 선수·관중 공통 */
+  #joy{position:absolute;left:calc(18px + env(safe-area-inset-left));bottom:calc(22px + env(safe-area-inset-bottom));width:132px;height:132px;border-radius:50%;
+    background:radial-gradient(circle,rgba(255,255,255,.55) 0 55%,rgba(255,255,255,.35) 56%);border:3px solid #4a2f22;display:none;touch-action:none;box-shadow:0 3px 0 rgba(74,47,34,.6)}
+  #touch.on #joy{display:block}
+  #joy:before,#joy:after{content:"";position:absolute;left:50%;top:50%;background:rgba(74,47,34,.25);border-radius:3px}
+  #joy:before{width:4px;height:96px;margin:-48px 0 0 -2px}#joy:after{width:96px;height:4px;margin:-2px 0 0 -48px}
+  #joyK{position:absolute;left:50%;top:50%;width:58px;height:58px;margin:-29px 0 0 -29px;border-radius:50%;background:#ffc93c;border:3px solid #4a2f22;z-index:1;box-shadow:0 3px 0 #4a2f22}
+  #joy.on #joyK{background:#ffdf7a}
   #swBtn{position:absolute;right:20px;bottom:calc(36px + env(safe-area-inset-bottom));width:74px;height:74px;border-radius:50%;font-size:28px;display:none;padding:0}
   #touch.walker #swBtn{display:block}
-  #swingTip{position:absolute;right:18px;bottom:calc(36px + env(safe-area-inset-bottom));font-size:13px;font-weight:900;color:#fff;text-align:right;line-height:1.5;-webkit-text-stroke:1px #4a2f22;display:none}
-  #touch.player #swingTip{display:block}
+  #swingTip{position:absolute;right:calc(14px + env(safe-area-inset-right));bottom:calc(30px + env(safe-area-inset-bottom));width:118px;height:118px;border-radius:50%;
+    border:3px dashed rgba(255,255,255,.85);display:none;align-items:center;justify-content:center;text-align:center;font-size:12px;font-weight:900;color:#fff;
+    line-height:1.35;text-shadow:0 1px 2px #4a2f22,0 0 3px #4a2f22;pointer-events:none;background:rgba(74,47,34,.18)}
+  #touch.player #swingTip{display:flex}
+  #swingTip.on{background:rgba(255,201,60,.45);border-style:solid}
+  body.touch .lb{display:none}
+  body.touch #topL button,body.touch #topR button{min-width:40px;height:40px;padding:0 8px;font-size:17px}
   @media (max-width:600px){
-    #score{top:calc(52px + env(safe-area-inset-top));font-size:18px}
-    #msg{font-size:24px;-webkit-text-stroke:1.5px #4a2f22}
-    #room,#menu{top:calc(96px + env(safe-area-inset-top))}
+    #score{top:calc(54px + env(safe-area-inset-top));font-size:18px;padding:4px 10px}
+    #msg{top:21%;font-size:22px;-webkit-text-stroke:1.2px #4a2f22;text-shadow:0 3px 0 #4a2f22;max-width:94vw;white-space:normal;line-height:1.25}
+    #room,#menu{top:calc(100px + env(safe-area-inset-top))}
+    #winImg{width:min(170px,42vw)}
+  }
+  @media (orientation:landscape) and (max-height:500px){
+    #score{top:calc(6px + env(safe-area-inset-top))}
+    body.touch #hint{top:calc(52px + env(safe-area-inset-top))}
+    #chatLog{bottom:calc(150px + env(safe-area-inset-bottom))}
   }
 </style>
 <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
@@ -135,19 +150,17 @@
 <!-- 모바일 조작 -->
 <div id="touch">
   <div id="swingZone"></div>
-  <div class="mv" id="mvL">◀</div>
-  <div class="mv" id="mvR">▶</div>
   <div id="joy"><div id="joyK"></div></div>
   <button id="swBtn" class="y">🏸</button>
-  <div id="swingTip">화면을 누르면 힘 모으기<br>떼면 스윙!</div>
+  <div id="swingTip">아무 곳이나<br>누르면 힘 모으기<br>떼면 스윙!</div>
 </div>
 
 <!-- 게임 HUD -->
 <div id="hud">
   <div id="topL">
-    <button class="w sm pe" id="bRoom">👥 대기실</button>
-    <button class="w sm pe" id="bMenu">⚙ 관리</button>
-    <button class="w sm pe" id="bView">👀 시점</button>
+    <button class="w sm pe" id="bRoom">👥<span class="lb"> 대기실</span></button>
+    <button class="w sm pe" id="bMenu">⚙<span class="lb"> 관리</span></button>
+    <button class="w sm pe" id="bView">👀<span class="lb"> 시점</span></button>
   </div>
   <div id="score" class="hidden">
     <span class="t tA">블루</span><span class="dot" id="dotA"></span><span id="scA">0</span>
@@ -158,9 +171,10 @@
     <button class="w sm pe" id="bMic">🎤 마이크</button>
     <button class="w sm pe" id="bSpk">🔊</button>
     <button class="w sm pe" id="bChat">💬</button>
-    <button class="w sm pe" id="bLeave">나가기</button>
+    <button class="w sm pe" id="bLeave">🚪<span class="lb"> 나가기</span></button>
   </div>
   <div id="msg"></div>
+  <div id="hint"></div>
   <img id="winImg" alt="">
   <div id="gauge"><div class="cover" id="gCover"></div><div class="lbl" id="gLbl">스윙 힘</div></div>
   <div id="chatLog"></div>
@@ -206,7 +220,7 @@
    - 참가자는 PeerJS(브라우저끼리 직접 연결)로 방장에게 접속
    - 음성은 마이크를 켠 사람이 다른 모두에게 직접 전송(메시 방식)
    ========================================================================== */
-const VERSION = '2.0';
+const VERSION = '2.2';
 const $ = id => document.getElementById(id);
 const clamp = (v,a,b) => Math.max(a,Math.min(b,v));
 const rand = (a,b) => a+Math.random()*(b-a);
@@ -587,7 +601,7 @@ function hostCreate(practice){
   pos.set(1,{x:0,z:-9.5,ry:0,st:0,g:0}); local.x=0; local.z=-9.5; local.ry=0;
   if(practice){ settings.cpu=1; roomCode=''; enterWorld(); startHostLoop(); pushRoster();
     startGame(); $('room').classList.remove('on');   // 혼자 연습은 바로 CPU와 경기 시작
-    flash('CPU와 연습 경기 시작! 👥 대기실에서 복식으로 바꿀 수 있어요',2500); return; }
+    flash('CPU와 연습 시작!',1500); return; }
   setStatus('연결 서버에 접속하는 중... (1/2)',true);
   const tryOpen=(tries)=>{
     roomCode=makeCode();
@@ -839,7 +853,7 @@ function updateHud(force){
   $('bView').classList.toggle('hidden',player);
   $('bMic').classList.toggle('hidden',mode==='practice');
   $('bSpk').classList.toggle('hidden',mode==='practice');
-  $('bMic').classList.toggle('mic-on',!!micStream); $('bMic').textContent=micStream?'🎤 켜짐':'🎤 마이크';
+  $('bMic').classList.toggle('mic-on',!!micStream); $('bMic').innerHTML=micStream?'🎤<span class="lb"> 켜짐</span>':'🎤<span class="lb"> 마이크</span>';
   $('bSpk').textContent=spkOn?'🔊':'🔇';
   $('bChat').classList.toggle('hidden',!IS_TOUCH);
   if(!inGame) $('menu').classList.remove('on');
@@ -890,7 +904,7 @@ function backHome(t){ resetAll(true); setStatus(t||''); }
    ========================================================================== */
 const keys={};
 const local={x:0,z:-9.5,ry:0,st:0,g:0,charging:false,chargeT:0,swingT:0,swingKind:4,kind:2,ax:0,moving:false,camYaw:0};
-let touchL=false,touchR=false,touchSwing=false; const joy={x:0,y:0,id:null};
+const joy={x:0,y:0,id:null};
 function chargeStart(){ if(local.charging) return; local.charging=true; local.chargeAt=performance.now(); local.chargeT=0; }
 function chargeRelease(){
   if(!local.charging) return;
@@ -915,19 +929,17 @@ function bindHold(el,on,off){
   const up=()=>{ off(); el.classList.remove('on'); };
   el.addEventListener('pointerup',up); el.addEventListener('pointercancel',up);
 }
-bindHold($('mvL'),()=>touchL=true,()=>touchL=false);
-bindHold($('mvR'),()=>touchR=true,()=>touchR=false);
 bindHold($('swBtn'),chargeStart,chargeRelease);
 const swPtr=new Set();
-$('swingZone').addEventListener('pointerdown',e=>{ e.preventDefault(); swPtr.add(e.pointerId); chargeStart(); });
-const szUp=e=>{ if(!swPtr.delete(e.pointerId)) return; if(!swPtr.size) chargeRelease(); };
+$('swingZone').addEventListener('pointerdown',e=>{ e.preventDefault(); swPtr.add(e.pointerId); chargeStart(); $('swingTip').classList.add('on'); });
+const szUp=e=>{ if(!swPtr.delete(e.pointerId)) return; if(!swPtr.size){ chargeRelease(); $('swingTip').classList.remove('on'); } };
 $('swingZone').addEventListener('pointerup',szUp); $('swingZone').addEventListener('pointercancel',szUp);
 // 가상 조이스틱 (관중·대기실 이동)
 (function(){
   const J=$('joy'), K=$('joyK');
-  J.addEventListener('pointerdown',e=>{ e.preventDefault(); joy.id=e.pointerId; try{J.setPointerCapture(e.pointerId);}catch(_){} move(e); });
+  J.addEventListener('pointerdown',e=>{ e.preventDefault(); joy.id=e.pointerId; try{J.setPointerCapture(e.pointerId);}catch(_){} J.classList.add('on'); move(e); });
   J.addEventListener('pointermove',e=>{ if(e.pointerId===joy.id) move(e); });
-  const end=e=>{ if(e.pointerId!==joy.id) return; joy.id=null; joy.x=joy.y=0; K.style.transform=''; };
+  const end=e=>{ if(e.pointerId!==joy.id) return; joy.id=null; joy.x=joy.y=0; K.style.transform=''; J.classList.remove('on'); };
   J.addEventListener('pointerup',end); J.addEventListener('pointercancel',end);
   function move(e){ const r=J.getBoundingClientRect(), R=r.width/2;
     let dx=(e.clientX-r.left-R)/R, dy=(e.clientY-r.top-R)/R; const l=Math.hypot(dx,dy); if(l>1){dx/=l;dy/=l;}
@@ -942,30 +954,23 @@ function updateLocal(dt){
   local.g = local.charging?Math.min(1,local.chargeT/GAUGE_TIME):0;
   local.swingT=Math.max(0,local.swingT-dt);
   const player=amPlayerNow(), paused=S&&S.ph==='paused';
-  const kx=((keys.ArrowRight||keys.KeyD||touchR)?1:0)-((keys.ArrowLeft||keys.KeyA||touchL)?1:0);
+  const kx=((keys.ArrowRight||keys.KeyD)?1:0)-((keys.ArrowLeft||keys.KeyA)?1:0);
   const kz=((keys.ArrowUp||keys.KeyW)?1:0)-((keys.ArrowDown||keys.KeyS)?1:0);
   let mx=0,mz=0;
   if(player){
     const team=mySlot()[0], xs=team==='A'?-1:1, fs=team==='A'?1:-1, side=-fs;
     const speed=(local.charging?0.6:1)*5.2;
+    let jx=kx, jz=kz;
+    if(joy.id!==null){ jx=joy.x; jz=-joy.y; }          // 원형 조이스틱 (밀어준 만큼 속도)
     if(!paused){
-      mx=kx*xs; mz=kz*fs; const l=Math.hypot(mx,mz); if(l>1){mx/=l;mz/=l;}
+      mx=jx*xs; mz=jz*fs; const l=Math.hypot(mx,mz); if(l>1){mx/=l;mz/=l;}
       local.x+=mx*speed*dt; local.z+=mz*speed*dt;
-      if(IS_TOUCH && kz===0 && S){            // 모바일: 앞뒤는 셔틀콕 떨어질 곳으로 자동 이동
-        let tz=side*3.6;
-        if(flLocal.id>=0 && flLocal.team!==team){
-          const myD=Math.hypot(local.x-flLocal.lx,local.z-flLocal.lz);
-          const mates=S.av.filter(a=>{ const mb=memberByUid(a[0]); return mb&&a[0]!==myUid&&isP(mb.slot)&&mb.slot[0]===team; });
-          if(mates.every(a=>Math.hypot(a[1]-flLocal.lx,a[2]-flLocal.lz)>=myD)) tz=flLocal.lz+side*0.3;
-        }
-        local.z+=clamp(tz-local.z,-speed*dt,speed*dt); mz=Math.abs(tz-local.z)>0.05?1:mz;
-      }
       local.x=clamp(local.x,-3.8,3.8);
       local.z=team==='A'?clamp(local.z,-7.6,-0.45):clamp(local.z,0.45,7.6);
     }
     if(S.ph==='serve' && S.sv===myUid && S.sp){ local.x=S.sp[0]; local.z=S.sp[1]; }
     local.ry=team==='A'?0:Math.PI;
-    local.ax=kx*xs;
+    local.ax=(Math.abs(jx)>0.35?Math.sign(jx):0)*xs;
     // 셔틀콕 높이를 보고 오버헤드/언더 스윙 자세 선택
     const sp=shuttleNow(); local.kind = sp && sp.y<1.5 && Math.hypot(sp.x-local.x,sp.z-local.z)<4 ? 3 : 2;
   } else {
@@ -1017,8 +1022,19 @@ function sfxPop(){ tone(880,0.12,0.05,'triangle'); }
 /* ==========================================================================
    9. 3D — 체육관 (참고 이미지 스타일: 파스텔 · 툰 셰이딩)
    ========================================================================== */
-const renderer=new THREE.WebGLRenderer({canvas:$('c'),antialias:!IS_TOUCH,powerPreference:'high-performance'});
-renderer.setPixelRatio(Math.min(devicePixelRatio,IS_TOUCH?1.5:2));
+const renderer=new THREE.WebGLRenderer({canvas:$('c'),antialias:true,powerPreference:'high-performance'});
+// 화질 자동 조절: 선명하게 시작하고, 프레임이 떨어지면 해상도를 단계적으로 낮춤
+const DPR_STEPS=[Math.min(devicePixelRatio,2),Math.min(devicePixelRatio,1.5),1.15,0.9];
+let dprIdx=0; renderer.setPixelRatio(DPR_STEPS[0]);
+const perf={n:0,t:0,cool:3};
+function adaptQuality(dt){
+  if(document.hidden) return;
+  perf.cool-=dt; if(perf.cool>0) return;
+  perf.n++; perf.t+=dt;
+  if(perf.t>=2){ const fps=perf.n/perf.t; perf.n=0; perf.t=0;
+    if(fps<40 && dprIdx<DPR_STEPS.length-1){ dprIdx++; renderer.setPixelRatio(DPR_STEPS[dprIdx]); resize(); perf.cool=2; }
+  }
+}
 const scene=new THREE.Scene();
 scene.background=new THREE.Color(0xc9d2ff);
 const camera=new THREE.PerspectiveCamera(55,1,0.1,120);
@@ -1302,7 +1318,8 @@ function cameraTarget(t){
   if(!mode || !myUid){ const a=t*0.1; return [new THREE.Vector3(Math.sin(a)*16,8,Math.cos(a)*16),new THREE.Vector3(0,0.5,0)]; }
   if(amPlayerNow()){
     const team=mySlot()[0], s=team==='A'?-1:1, fx=local.x*(portrait?0.7:0.35);
-    const back=portrait?14:12.2, up=portrait?7.2:5.6;
+    const shortLand=!portrait && innerHeight<520;   // 가로로 눕힌 휴대폰: 조금 더 가깝게
+    const back=portrait?14:shortLand?10.2:12.2, up=portrait?7.2:shortLand?4.9:5.6;
     return [new THREE.Vector3(fx,up,s*back),new THREE.Vector3(fx*0.5,0.9,-s*1.8)];
   }
   if(viewMode==='court') return [new THREE.Vector3(portrait?14:11.5,portrait?9:7,0),new THREE.Vector3(0,0.8,0)];
@@ -1316,7 +1333,8 @@ let lastT=performance.now();
 const tmpV=new THREE.Vector3();
 function frame(now){
   requestAnimationFrame(frame);
-  const dt=Math.min(0.1,(now-lastT)/1000); lastT=now;
+  const rawDt=(now-lastT)/1000, dt=Math.min(0.1,rawDt); lastT=now;
+  adaptQuality(rawDt);
   updateLocal(dt);
   const k=1-Math.exp(-dt*14);
   // 아바타
@@ -1383,10 +1401,12 @@ function hudFrame(){
   if(inGame){
     if(S.ph==='point'||S.ph==='over') text=S.ms;
     else if(S.ph==='paused') text='⏸ 일시정지';
-    else if(S.ph==='serve' && S.sv===myUid) text=IS_TOUCH?'화면을 눌렀다 떼서 서브!':'스페이스를 눌렀다 떼서 서브!';
   }
+  const hint=$('hint'); const serveMe=inGame&&S.ph==='serve'&&S.sv===myUid;
+  hint.style.display=serveMe?'block':'none';
+  if(serveMe) hint.textContent=IS_TOUCH?'🏸 내 서브! 화면을 눌렀다 떼세요':'🏸 내 서브! 스페이스를 눌렀다 떼세요';
   const el=$('msg');
-  if(!flashOn){ el.textContent=text; el.style.opacity=text?1:0; } else el.style.opacity=1;
+  if(!flashOn){ if(el.textContent!==text) el.textContent=text; el.style.opacity=text?1:0; el.style.visibility=text?'visible':'hidden'; } else { el.style.opacity=1; el.style.visibility='visible'; }
   const wi=$('winImg'); const showWin=S&&S.ph==='over'&&S.win;
   if(showWin){ wi.src=S.win==='A'?ASSET.duck_blue:ASSET.duck_red; wi.style.display='block'; } else wi.style.display='none';
   // 게이지
