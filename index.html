@@ -252,7 +252,7 @@
    - 참가자는 PeerJS(브라우저끼리 직접 연결)로 방장에게 접속
    - 음성은 마이크를 켠 사람이 다른 모두에게 직접 전송(메시 방식)
    ========================================================================== */
-const VERSION = '3.1';
+const VERSION = '3.2';
 const $ = id => document.getElementById(id);
 const clamp = (v,a,b) => Math.max(a,Math.min(b,v));
 const rand = (a,b) => a+Math.random()*(b-a);
@@ -1402,6 +1402,47 @@ function drawLaurel(g,cx,cy,r,col){
   [-1,1].forEach(sd=>{ for(let i=0;i<6;i++){ const a=Math.PI/2+sd*(0.5+i*0.32), x=cx+Math.cos(a)*r*sd*-1*sd, y=cy+Math.sin(a)*r;
     g.save(); g.translate(cx+sd*Math.abs(Math.cos(a))*r, cy+Math.sin(a)*r*0.9 - r*0.1); g.rotate(sd*(a-Math.PI/2)); g.beginPath(); g.ellipse(0,0,r*0.09,r*0.2,0,0,Math.PI*2); g.fill(); g.restore(); } });
 }
+/* ===== 성능 최적화: 여러 조각을 하나로 합쳐 그리기 명령 수를 줄임 =====
+   그래픽 카드는 "조각 개수"만큼 그리기 명령을 받음 → 같은 재질 조각을 한 덩어리로 합치면 훨씬 가벼워짐 */
+const vcToon=new THREE.MeshToonMaterial({vertexColors:true,gradientMap:grad});
+function mergeParts(parts,material,withColor){
+  let n=0;
+  const gs=parts.map(pt=>{ const g=pt.geo.index?pt.geo.toNonIndexed():pt.geo.clone(); g.applyMatrix4(pt.m); n+=g.attributes.position.count; return {g,c:pt.color}; });
+  const pos=new Float32Array(n*3), nor=new Float32Array(n*3), uv=new Float32Array(n*2), col=withColor?new Float32Array(n*3):null;
+  let o=0;
+  gs.forEach(({g,c})=>{ const cnt=g.attributes.position.count;
+    pos.set(g.attributes.position.array,o*3);
+    if(g.attributes.normal) nor.set(g.attributes.normal.array,o*3);
+    if(g.attributes.uv) uv.set(g.attributes.uv.array,o*2);
+    if(col) for(let i=0;i<cnt;i++){ col[(o+i)*3]=c.r; col[(o+i)*3+1]=c.g; col[(o+i)*3+2]=c.b; }
+    o+=cnt; g.dispose(); });
+  const G=new THREE.BufferGeometry();
+  G.setAttribute('position',new THREE.BufferAttribute(pos,3)); G.setAttribute('normal',new THREE.BufferAttribute(nor,3)); G.setAttribute('uv',new THREE.BufferAttribute(uv,2));
+  if(col) G.setAttribute('color',new THREE.BufferAttribute(col,3));
+  G.computeBoundingSphere();
+  return new THREE.Mesh(G,material);
+}
+// group 안의 조각(다른 움직이는 묶음 제외)을 재질별로 합쳐 group에 다시 붙임
+function flattenGroup(group,stop){
+  group.updateMatrixWorld(true);
+  const inv=new THREE.Matrix4().copy(group.matrixWorld).invert();
+  const toon=[], outl=[], basic=new Map(), kill=[];
+  (function walk(o){ for(const ch of o.children){
+      if(stop.has(ch)) continue;
+      if(ch.isMesh && !ch.isInstancedMesh){
+        const mt=ch.material, m=new THREE.Matrix4().multiplyMatrices(inv,ch.matrixWorld);
+        if(mt===outlineMat){ outl.push({geo:ch.geometry,m}); kill.push(ch); }
+        else if(mt.isMeshToonMaterial && !mt.transparent && !mt.map && mt.side!==THREE.DoubleSide){ toon.push({geo:ch.geometry,m,color:mt.color}); kill.push(ch); }
+        else if(mt.isMeshBasicMaterial && !mt.transparent && !mt.map){ const k=mt.color.getHex()+'|'+mt.side; if(!basic.has(k)) basic.set(k,{mt,list:[]}); basic.get(k).list.push({geo:ch.geometry,m}); kill.push(ch); }
+      }
+      walk(ch); } })(group);
+  kill.forEach(k=>{ if(k.parent) k.parent.remove(k); });
+  const out={};
+  if(toon.length){ out.toon=mergeParts(toon,vcToon,true); group.add(out.toon); }
+  if(outl.length){ out.outline=mergeParts(outl,outlineMat,false); group.add(out.outline); }
+  basic.forEach(({mt,list})=>group.add(mergeParts(list,mt,false)));
+  return out;
+}
 (function buildGym(){
   // 바닥 · 코트
   boxM(26,0.1,32,0x6f8fe6,0,-0.05,0);
@@ -1490,6 +1531,8 @@ function drawLaurel(g,cx,cy,r,col){
   boxM(26,0.3,32,0x5d6fc8,0,10.2,0);
   for(let x=-8;x<=8;x+=8) for(let z=-10;z<=10;z+=10){ const l=new THREE.Mesh(new THREE.CylinderGeometry(0.6,0.75,0.25,18),new THREE.MeshBasicMaterial({color:0xfff6d6})); l.position.set(x,9.9,z); scene.add(l); }
 })();
+// 체육관 장식을 한 덩어리로 합침 (투명·그림 붙은 판·의자 묶음은 그대로)
+flattenGroup(scene,new Set());
 // 벽 점수판 (실시간 갱신)
 const sbCanvas=document.createElement('canvas'); sbCanvas.width=256; sbCanvas.height=96;
 const sbTex=new THREE.CanvasTexture(sbCanvas); sbTex.colorSpace=THREE.SRGBColorSpace;
@@ -1608,7 +1651,12 @@ function buildAnimal(animal,shirt){
   const ring=new THREE.Mesh(new THREE.RingGeometry(0.5,0.6,30),new THREE.MeshBasicMaterial({color:0xffc93c,side:THREE.DoubleSide,transparent:true,opacity:0.9}));
   ring.rotation.x=-Math.PI/2; ring.position.y=0.035; ring.visible=false; root.add(ring);
   root.scale.setScalar(1.05);
-  return {root,body,headG,arm,armL,legs,ring,sh};
+  // 움직이는 묶음(몸·머리·팔·다리)마다 조각을 합침: 캐릭터 1명 41조각 → 약 12조각
+  const stop=new Set([headG,arm,armL,...legs,racket]);
+  const outlines=[];
+  [body,headG,armL,...legs].forEach(g=>{ const r=flattenGroup(g,new Set([...stop].filter(x=>x!==g))); if(r.outline) outlines.push(r.outline); });
+  { const r=flattenGroup(arm,new Set([...stop].filter(x=>x!==arm && x!==racket))); if(r.outline) outlines.push(r.outline); }
+  return {root,body,headG,arm,armL,legs,ring,sh,outlines,strings};
 }
 // 스윙 포즈 (어깨 회전 x, z / 몸통 비틀기)
 const POSE = {
@@ -1729,6 +1777,8 @@ function frame(now){
       let d=ry-av.ry; d=Math.atan2(Math.sin(d),Math.cos(d)); av.ry+=d*Math.min(1,dt*12);
       av.y = (uid===myUid||mode==='client') ? y : (av.y||0)+(y-(av.y||0))*Math.min(1,dt*20);
       av.m.root.position.set(av.x,av.y,av.z); av.m.root.rotation.y=av.ry;
+      const far = uid!==myUid && camera.position.distanceToSquared(av.m.root.position) > 13*13;   // 13m보다 멀면 단순하게
+      if(far!==av.far){ av.far=far; av.m.outlines.forEach(o=>o.visible=!far); av.m.strings.visible=!far; }
       av.m.sh.position.y=0.03-av.y/1.05; av.m.ring.position.y=0.035-av.y/1.05;    // 그림자는 바닥에 남김
       av.m.sh.scale.setScalar(Math.max(0.5,1-av.y*0.45));
       animPose(av,st,g,dt);
@@ -1774,16 +1824,20 @@ function frame(now){
     tmpV.set(av.x,2.05+(av.y||0),av.z).project(camera);
     if(tmpV.z>1||tmpV.z<-1){ av.tag.style.display='none'; return; }
     const dist=camera.position.distanceTo(av.m.root.position);
-    av.tag.style.transform=`translate(${(tmpV.x*0.5+0.5)*W}px,${(-tmpV.y*0.5+0.5)*H}px) translate(-50%,-100%) scale(${clamp(9/dist,0.6,1.1)})`;
+    const tf=`translate(${Math.round((tmpV.x*0.5+0.5)*W)}px,${Math.round((-tmpV.y*0.5+0.5)*H)}px) translate(-50%,-100%) scale(${clamp(9/dist,0.6,1.1).toFixed(2)})`;
+    if(av.tf!==tf){ av.tf=tf; av.tag.style.transform=tf; }
   });
   hudFrame();
 }
+const _ui=new Map();
+function setUI(el,key,val){ const k=el.id+'|'+key; if(_ui.get(k)===val) return; _ui.set(k,val);
+  if(key==='text') el.textContent=val; else if(key==='src') el.src=val; else el.style[key]=val; }
 function hudFrame(){
   if(!mode) return;
   const inGame=S&&IN_GAME.includes(S.ph);
   if(inGame){
-    $('scA').textContent=S.sc[0]; $('scB').textContent=S.sc[1];
-    $('dotA').style.visibility=S.st==='A'?'visible':'hidden'; $('dotB').style.visibility=S.st==='B'?'visible':'hidden';
+    setUI($('scA'),'text',String(S.sc[0])); setUI($('scB'),'text',String(S.sc[1]));
+    setUI($('dotA'),'visibility',S.st==='A'?'visible':'hidden'); setUI($('dotB'),'visibility',S.st==='B'?'visible':'hidden');
   }
   // 중앙 메시지
   let text='';
@@ -1792,12 +1846,12 @@ function hudFrame(){
     else if(S.ph==='paused') text='⏸ 일시정지';
   }
   const hint=$('hint'); const serveMe=inGame&&S.ph==='serve'&&S.sv===myUid;
-  hint.style.display=serveMe?'block':'none';
-  if(serveMe) hint.textContent=IS_TOUCH?'🏸 내 서브! 화면을 눌렀다 떼세요':'🏸 내 서브! A를 눌렀다 떼세요';
+  setUI(hint,'display',serveMe?'block':'none');
+  if(serveMe) setUI(hint,'text',IS_TOUCH?'🏸 내 서브! 화면을 눌렀다 떼세요':'🏸 내 서브! A를 눌렀다 떼세요');
   const el=$('msg');
-  if(!flashOn){ if(el.textContent!==text) el.textContent=text; el.style.opacity=text?1:0; el.style.visibility=text?'visible':'hidden'; } else { el.style.opacity=1; el.style.visibility='visible'; }
+  if(!flashOn){ if(el.textContent!==text){ el.textContent=text; _ui.delete('msg|text'); } setUI(el,'opacity',text?'1':'0'); setUI(el,'visibility',text?'visible':'hidden'); } else { setUI(el,'opacity','1'); setUI(el,'visibility','visible'); }
   const wi=$('winImg'); const showWin=S&&S.ph==='over'&&S.win;
-  if(showWin){ wi.src=S.win==='A'?ASSET.duck_blue:ASSET.duck_red; wi.style.display='block'; } else wi.style.display='none';
+  if(showWin){ setUI(wi,'src',S.win==='A'?ASSET.duck_blue:ASSET.duck_red); setUI(wi,'display','block'); } else setUI(wi,'display','none');
   // 게이지
   const gg=$('gauge'); const showG=local.charging||local.swingT>0;
   gg.classList.toggle('on',showG && myUid>0);
