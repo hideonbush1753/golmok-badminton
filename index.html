@@ -65,6 +65,7 @@
     padding:5px 14px;font-size:13px;font-weight:900;white-space:nowrap;box-shadow:0 3px 0 #4a2f22;display:none;animation:bob 1s ease-in-out infinite}
   body.touch #hint{bottom:auto;top:calc(104px + env(safe-area-inset-top))}
   @keyframes bob{50%{transform:translateX(-50%) translateY(-3px)}}
+  #netInfo{position:absolute;left:8px;top:calc(56px + env(safe-area-inset-top));font-size:10.5px;font-weight:800;color:#fff;background:rgba(58,42,32,.55);padding:2px 7px;border-radius:8px}
   #connBanner{position:absolute;left:50%;top:calc(58px + env(safe-area-inset-top));transform:translateX(-50%);background:#ffc93c;border:3px solid #4a2f22;border-radius:12px;
     padding:5px 12px;font-size:13px;font-weight:900;display:none;box-shadow:0 3px 0 #4a2f22;max-width:92vw;text-align:center;z-index:2}
   body.touch #connBanner{top:calc(150px + env(safe-area-inset-top))}
@@ -190,6 +191,7 @@
   </div>
   <div id="msg"></div>
   <div id="hint"></div>
+  <div id="netInfo"></div>
   <div id="connBanner"></div>
   <img id="winImg" alt="">
   <div id="aimTip"></div>
@@ -250,7 +252,7 @@
    - 참가자는 PeerJS(브라우저끼리 직접 연결)로 방장에게 접속
    - 음성은 마이크를 켠 사람이 다른 모두에게 직접 전송(메시 방식)
    ========================================================================== */
-const VERSION = '3.0';
+const VERSION = '3.1';
 const $ = id => document.getElementById(id);
 const clamp = (v,a,b) => Math.max(a,Math.min(b,v));
 const rand = (a,b) => a+Math.random()*(b-a);
@@ -627,7 +629,7 @@ function snapshot(){
   const sh=G.sh, f=sh.fl;
   const av=[];
   pos.forEach((q,uid)=>{ if(memberByUid(uid)) av.push([uid,r2(q.x),r2(q.z),r2(q.ry),q.st,q.g,q.y||0]); });
-  return {t:'s',ph:G.ph,sc:[G.sc.A,G.sc.B],tg:settings.target,sv:G.sv?(G.pl[G.sv]||{}).uid:0,st:G.st,ms:G.ms,rs:G.rs,dbl:G.dbl,
+  return {t:'s',ht:Math.round(G.t*1000)/1000,ph:G.ph,sc:[G.sc.A,G.sc.B],tg:settings.target,sv:G.sv?(G.pl[G.sv]||{}).uid:0,st:G.st,ms:G.ms,rs:G.rs,dbl:G.dbl,
     win:G.win||'', sp:G.ph==='serve'?G.sp:null, sh:[r2(sh.x),r2(sh.y),r2(sh.z)],
     fl:f?[f.id,r2(f.sx),r2(f.sy),r2(f.sz),r2(f.lx),r2(f.lz),r2(f.T),r2(f.h),r2(f.t),f.team]:null, av};
 }
@@ -675,6 +677,7 @@ function hostHandle(uid,m){
       pushRoster(); break; }
     case 'ani': if(ANIMALS[m.a]){ mb.animal=m.a; pushRoster(); } break;
     case 'mic': mb.mic=!!m.on; pushRoster(); break;
+    case 'pi': sendTo(uid,{t:'po',c:m.c}); break;   // 통신 지연 측정용 응답
     case 'vid': if(netMode==='relay' && typeof m.id==='string'){ mb.id=m.id.slice(0,64); pushRoster(); } break;
     case 'set': if(uid!==myUid || G.ph!=='lobby') return;
       if([11,15,21].includes(+m.target)) settings.target=+m.target;
@@ -945,6 +948,7 @@ function onMessage(m){
   lastHostMsg=performance.now();
   switch(m.t){
     case 'p': return;
+    case 'po': if(typeof m.c==='number'){ const r=performance.now()-m.c; netStat.rtt = netStat.rtt==null? r : netStat.rtt*0.7+r*0.3; } return;
     case 's': onSnapshot(m); break;
     case 'ro': onRoster(m); break;
     case 'ev': onEvent(m); break;
@@ -959,13 +963,47 @@ function onMessage(m){
   }
 }
 let lastRs=-1, prevPh=null;
+const netStat={rtt:null,fps:0,fn:0,ft:0};
+setInterval(()=>{ if(mode==='client' && hostConn && hostConn.open && myUid) hostConn.send({t:'pi',c:performance.now()}); },3000);
 const flLocal={id:-1};
+/* 방장 시계 맞추기
+   - 메시지는 늦게 도착할 수는 있어도 빨리 도착할 수는 없음 → "가장 덜 늦은" 값을 기준으로 삼으면
+     도착 간격이 들쭉날쭉해도(지터) 시계가 흔들리지 않음
+   - 셔틀은 "출발 시각 + 지난 시간"으로 매 화면 계산 → 순간이동 없이 매끄럽게 날아감 */
+const clock={off:null};
+const nowS=()=>performance.now()/1000;
+function hostNow(){ return clock.off===null ? 0 : nowS()+clock.off; }
+const snapHist=[];          // 다른 선수 움직임 보간용 최근 상태 기록
+const INTERP_DELAY=0.12;    // 다른 선수는 0.12초 전 모습을 부드럽게 보여줌
+const shVis={ox:0,oy:0,oz:0};   // 타격 순간 위치 차이를 서서히 없애는 보정값
+function curFlightT(){
+  if(flLocal.frozen!=null) return flLocal.frozen;
+  if(mode==='client' && flLocal.t0!=null && clock.off!==null) return clamp(hostNow()-flLocal.t0-(flLocal.lag||0),0,flLocal.T);
+  return flLocal.t;
+}
 function onSnapshot(m){
   S=m;
+  if(typeof m.ht==='number'){
+    const smp=m.ht-nowS();
+    if(clock.off===null || smp>clock.off || smp<clock.off-0.5) clock.off=smp;
+    const map=new Map(); m.av.forEach(a=>map.set(a[0],a));
+    snapHist.push({ht:m.ht,map}); while(snapHist.length>20) snapHist.shift();
+  }
   if(m.rs!==lastRs){ lastRs=m.rs; const q=m.av.find(a=>a[0]===myUid); if(q){ local.x=q[1]; local.z=q[2]; local.ry=q[3]; } }
   if(m.fl){
-    if(m.fl[0]!==flLocal.id){ Object.assign(flLocal,{id:m.fl[0],sx:m.fl[1],sy:m.fl[2],sz:m.fl[3],lx:m.fl[4],lz:m.fl[5],T:m.fl[6],h:m.fl[7],t:m.fl[8],team:m.fl[9]}); }
-    else if(Math.abs(flLocal.t-m.fl[8])>0.12) flLocal.t=m.fl[8]+0.03;   // 어긋나면 보정
+    const t0 = typeof m.ht==='number' ? m.ht-m.fl[8] : null;   // 방장 기준 출발 시각
+    if(m.fl[0]!==flLocal.id){
+      const had=flLocal.id>=0 || shuttle.visible;
+      Object.assign(flLocal,{id:m.fl[0],sx:m.fl[1],sy:m.fl[2],sz:m.fl[3],lx:m.fl[4],lz:m.fl[5],T:m.fl[6],h:m.fl[7],t:m.fl[8],team:m.fl[9],t0,lag:0});
+      // 늦게 도착한 만큼 출발점부터 보여주고, 1.5배속으로 따라잡음 → 공이 앞으로 건너뛰지 않음
+      if(mode==='client' && t0!=null && clock.off!==null) flLocal.lag=clamp(hostNow()-t0,0,0.4);
+      if(had && mode==='client'){                               // 새 궤적으로 바뀔 때 화면상 위치 차이를 0.15초에 걸쳐 흡수
+        const np=flightPos(flLocal,curFlightT());
+        shVis.ox=shuttle.position.x-np[0]; shVis.oy=shuttle.position.y-np[1]; shVis.oz=shuttle.position.z-np[2];
+        if(Math.hypot(shVis.ox,shVis.oy,shVis.oz)>3){ shVis.ox=shVis.oy=shVis.oz=0; }
+      }
+    } else { flLocal.t0=t0; if(mode!=='client') flLocal.t=m.fl[8]; }
+    flLocal.frozen = m.ph==='paused' ? m.fl[8] : null;
   } else flLocal.id=-1;
   if(m.ph!==prevPh){
     if(m.ph==='lobby' && prevPh && prevPh!=='lobby'){ $('room').classList.add('on'); }
@@ -1327,9 +1365,9 @@ function sfxJump(){ if(!AC) return; try{ const o=AC.createOscillator(),g=AC.crea
 /* ==========================================================================
    9. 3D — 체육관 (참고 이미지 스타일: 파스텔 · 툰 셰이딩)
    ========================================================================== */
-const renderer=new THREE.WebGLRenderer({canvas:$('c'),antialias:true,powerPreference:'high-performance'});
+const renderer=new THREE.WebGLRenderer({canvas:$('c'),antialias:!IS_TOUCH,powerPreference:'high-performance'});
 // 화질 자동 조절: 선명하게 시작하고, 프레임이 떨어지면 해상도를 단계적으로 낮춤
-const DPR_STEPS=[Math.min(devicePixelRatio,2),Math.min(devicePixelRatio,1.5),1.15,0.9];
+const DPR_STEPS=IS_TOUCH?[Math.min(devicePixelRatio,1.5),1.2,1.0,0.85]:[Math.min(devicePixelRatio,2),Math.min(devicePixelRatio,1.5),1.15,0.9];
 let dprIdx=0; renderer.setPixelRatio(DPR_STEPS[0]);
 const perf={n:0,t:0,cool:3};
 function adaptQuality(dt){
@@ -1665,7 +1703,10 @@ const tmpV=new THREE.Vector3();
 function frame(now){
   requestAnimationFrame(frame);
   const rawDt=(now-lastT)/1000, dt=Math.min(0.1,rawDt); lastT=now;
+  if(clock.off!==null) clock.off-=rawDt*0.01;   // 시계 차이 미세 조정 (초당 10ms씩 다시 맞춤)
   adaptQuality(rawDt);
+  netStat.fn++; netStat.ft+=rawDt; if(netStat.ft>=1){ netStat.fps=Math.round(netStat.fn/netStat.ft); netStat.fn=0; netStat.ft=0;
+    const ni=$('netInfo'); if(ni) ni.textContent = mode ? `${netStat.fps}fps`+(mode==='client'&&netStat.rtt!=null?` · 지연 ${Math.round(netStat.rtt)}ms`:'') : ''; }
   updateLocal(dt);
   const k=1-Math.exp(-dt*14);
   // 아바타
@@ -1674,13 +1715,19 @@ function frame(now){
     avatars.forEach((av,uid)=>{
       let x,z,ry,st,g,y;
       if(uid===myUid){ x=local.x; z=local.z; ry=local.ry; st=local.st; g=local.g; y=local.jy; }
-      else { const a=avMap.get(uid); if(!a){ av.m.root.visible=false; av.tag.style.display='none'; return; } [,x,z,ry,st,g,y]=a; g/=9; y=y||0; }
+      else { const a=avMap.get(uid); if(!a){ av.m.root.visible=false; av.tag.style.display='none'; return; } [,x,z,ry,st,g,y]=a; g/=9; y=y||0;
+        if(mode==='client' && snapHist.length>1 && clock.off!==null){
+          const rt=hostNow()-INTERP_DELAY;
+          for(let i=snapHist.length-1;i>0;i--){ const A=snapHist[i-1], B=snapHist[i];
+            if(A.ht<=rt && rt<=B.ht){ const a1=A.map.get(uid), b1=B.map.get(uid);
+              if(a1&&b1){ const f=(rt-A.ht)/Math.max(1e-3,B.ht-A.ht); x=a1[1]+(b1[1]-a1[1])*f; z=a1[2]+(b1[2]-a1[2])*f; y=(a1[6]||0)+((b1[6]||0)-(a1[6]||0))*f; av.interp=true; }
+              break; } } } }
       av.m.root.visible=true; av.tag.style.display='';
       const px=av.x, pz=av.z;
-      if(uid===myUid){ av.x=x; av.z=z; } else { av.x+=(x-av.x)*k; av.z+=(z-av.z)*k; }
+      if(uid===myUid || av.interp){ av.x=x; av.z=z; av.interp=false; } else { av.x+=(x-av.x)*k; av.z+=(z-av.z)*k; }
       av.moveSpd=Math.hypot(av.x-px,av.z-pz)/Math.max(dt,1e-3);
       let d=ry-av.ry; d=Math.atan2(Math.sin(d),Math.cos(d)); av.ry+=d*Math.min(1,dt*12);
-      av.y = uid===myUid ? y : (av.y||0)+(y-(av.y||0))*Math.min(1,dt*20);
+      av.y = (uid===myUid||mode==='client') ? y : (av.y||0)+(y-(av.y||0))*Math.min(1,dt*20);
       av.m.root.position.set(av.x,av.y,av.z); av.m.root.rotation.y=av.ry;
       av.m.sh.position.y=0.03-av.y/1.05; av.m.ring.position.y=0.035-av.y/1.05;    // 그림자는 바닥에 남김
       av.m.sh.scale.setScalar(Math.max(0.5,1-av.y*0.45));
@@ -1696,10 +1743,16 @@ function frame(now){
   if(S && IN_GAME.includes(S.ph)){
     shuttle.visible=true;
     let p;
-    if(flLocal.id>=0){ flLocal.t=Math.min(flLocal.T,flLocal.t+(S.ph==='paused'?0:dt)); p=flightPos(flLocal,flLocal.t); }
+    if(flLocal.id>=0){
+      if(mode==='client'){ flLocal.t=curFlightT(); }
+      else flLocal.t=Math.min(flLocal.T,flLocal.t+(S.ph==='paused'?0:dt));
+      p=flightPos(flLocal,flLocal.t);
+    }
     else p=S.sh;
     const prev=shuttle.position.clone();
-    if(flLocal.id>=0) shuttle.position.set(p[0],p[1],p[2]);
+    const dk=Math.exp(-dt/0.12); shVis.ox*=dk; shVis.oy*=dk; shVis.oz*=dk;
+    if(flLocal.lag>0) flLocal.lag=Math.max(0,flLocal.lag-dt*0.5);
+    if(flLocal.id>=0) shuttle.position.set(p[0]+shVis.ox,Math.max(0.03,p[1]+shVis.oy),p[2]+shVis.oz);
     else { shuttle.position.x+=(p[0]-shuttle.position.x)*k*1.5; shuttle.position.y+=(p[1]-shuttle.position.y)*k*1.5; shuttle.position.z+=(p[2]-shuttle.position.z)*k*1.5; }
     const v=shuttle.position.clone().sub(prev);
     if(v.lengthSq()>1e-6) shuttle.lookAt(tmpV.copy(shuttle.position).add(v));
