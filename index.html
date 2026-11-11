@@ -61,7 +61,7 @@
   .mic-on{background:#2fbf71!important}
   #msg{position:absolute;top:24%;left:50%;transform:translateX(-50%);font-size:34px;font-weight:900;color:#fff;
     -webkit-text-stroke:2px #4a2f22;text-shadow:0 4px 0 #4a2f22;white-space:nowrap;transition:opacity .25s;text-align:center}
-  #hint{position:absolute;left:50%;bottom:calc(64px + env(safe-area-inset-bottom));transform:translateX(-50%);background:#fff8ef;border:3px solid #4a2f22;border-radius:999px;
+  #hint{position:absolute;left:50%;bottom:calc(110px + env(safe-area-inset-bottom));transform:translateX(-50%);background:#fff8ef;border:3px solid #4a2f22;border-radius:999px;
     padding:5px 14px;font-size:13px;font-weight:900;white-space:nowrap;box-shadow:0 3px 0 #4a2f22;display:none;animation:bob 1s ease-in-out infinite}
   body.touch #hint{bottom:auto;top:calc(104px + env(safe-area-inset-top))}
   @keyframes bob{50%{transform:translateX(-50%) translateY(-3px)}}
@@ -77,6 +77,9 @@
   #gauge .cover{position:absolute;top:0;right:0;bottom:0;background:rgba(255,255,255,.82)}
   #gauge .lbl{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:900;color:#4a2f22}
   #gauge.on{display:block}
+  #aimTip{position:absolute;left:50%;bottom:calc(80px + env(safe-area-inset-bottom));transform:translateX(-50%);font-size:12px;font-weight:900;color:#fff;
+    background:rgba(58,42,32,.75);padding:3px 10px;border-radius:9px;white-space:nowrap;display:none}
+  body.touch #aimTip{left:auto;right:calc(12px + env(safe-area-inset-right));transform:none;bottom:calc(192px + env(safe-area-inset-bottom))}
   body.touch #gauge{left:auto;right:calc(12px + env(safe-area-inset-right));transform:none;bottom:calc(160px + env(safe-area-inset-bottom));width:150px}
   /* 채팅 */
   #chatLog{position:absolute;left:8px;bottom:calc(250px + env(safe-area-inset-bottom));width:min(330px,62vw);display:flex;flex-direction:column;gap:3px}
@@ -163,7 +166,7 @@
   <button id="jumpBtn" class="y">⤒<br>점프</button>
   <div id="joy"><div id="joyK"></div></div>
   <button id="swBtn" class="y">🏸</button>
-  <div id="swingTip">아무 곳이나<br>누르면 힘 모으기<br>떼면 스윙!</div>
+  <div id="swingTip">누르고 있으면 힘↑<br>조이스틱으로 조준<br>떼면 스윙!</div>
 </div>
 
 <!-- 게임 HUD -->
@@ -188,6 +191,7 @@
   <div id="hint"></div>
   <div id="connBanner"></div>
   <img id="winImg" alt="">
+  <div id="aimTip"></div>
   <div id="gauge"><div class="cover" id="gCover"></div><div class="lbl" id="gLbl">스윙 힘</div></div>
   <div id="chatLog"></div>
   <div id="chatBar" class="pe"><input id="chatIn" maxlength="60" placeholder="메시지 입력 (Enter)" enterkeyhint="send"><button class="sm" id="chatSend">보내기</button></div>
@@ -233,7 +237,7 @@
     <div class="row"><input id="inCode" maxlength="4" placeholder="ABCD" autocomplete="off" autocapitalize="characters" style="text-transform:uppercase;letter-spacing:4px"><button id="bJoin" style="flex:.55">입장</button></div>
     <button class="w mt" id="bPractice" style="width:100%">혼자 연습하기 (CPU 대전)</button>
     <div id="status"></div>
-    <div class="tip">PC: 방향키 이동 · A 누르고 있다 떼면 스윙 · 스페이스 점프 · Enter 채팅<br>모바일: 조이스틱 이동 · 점프 버튼 · 화면 누르고 있다 떼면 스윙</div>
+    <div class="tip">PC: 방향키 이동 · A 누른 채 방향키로 조준, 떼면 스윙 · 스페이스 점프<br>모바일: 조이스틱 이동 · 화면 누른 채 조이스틱으로 조준, 떼면 스윙 · 점프 버튼</div>
   </div>
 </div>
 
@@ -245,7 +249,7 @@
    - 참가자는 PeerJS(브라우저끼리 직접 연결)로 방장에게 접속
    - 음성은 마이크를 켠 사람이 다른 모두에게 직접 전송(메시 방식)
    ========================================================================== */
-const VERSION = '2.4';
+const VERSION = '2.5';
 const $ = id => document.getElementById(id);
 const clamp = (v,a,b) => Math.max(a,Math.min(b,v));
 const rand = (a,b) => a+Math.random()*(b-a);
@@ -336,7 +340,7 @@ function homePos(p){
   const n = teamList(p.team).length;
   return {x: n>1 ? (p.slot[1]==='1'?-1.3:1.3) : 0, z: sideOf(p.team)*3.8};
 }
-function mkP(slot,uid,cpu){ return {slot,team:slot[0],uid,cpu,x:0,z:sideOf(slot[0])*3.8,h:false,g:0,ax:0,swT:0,pow:0.5,cool:0,st:0,ry:0,jy:0,vy:0}; }
+function mkP(slot,uid,cpu){ return {slot,team:slot[0],uid,cpu,x:0,z:sideOf(slot[0])*3.8,h:false,g:0,ax:0,aimX:0,aimZ:0,swT:0,pow:0.5,cool:0,st:0,ry:0,jy:0,vy:0}; }
 function clampSide(p){
   p.x = clamp(p.x,-3.8,3.8);
   p.z = p.team==='A' ? clamp(p.z,-7.6,-0.45) : clamp(p.z,0.45,7.6);
@@ -391,31 +395,58 @@ function launch(lx,lz,T,h,team,net){
   }
   G.sh.fl={id:++G.flId,sx,sy,sz,lx,lz,T,h,t:0,team,net,nx:rand(-.45,.45),nz:rand(-.4,.4)};
 }
+/* 조준 규칙
+   aimX: -1(왼쪽) ~ 1(오른쪽)  ※ 월드 x 기준으로 변환된 값
+   aimZ: -1(네트 앞 짧게) ~ 1(엔드라인 깊게)
+   pw  : 힘 게이지 0~1, y: 칠 때 셔틀 높이, jy: 점프 높이, d: 셔틀과의 거리
+   반환: 목표 낙하 지점(lx,lz), 비행 시간 T, 궤적 높이 h, 샷 종류, 오차 반경 spread */
+function aimPlan(team,aimX,aimZ,pw,y,jy,dbl,d){
+  const dir=team==='A'?1:-1, hw=dbl?C.hw:C.hws, W=hw-0.3;
+  let depth=1.4+pw*4.4+clamp(aimZ,-1,1)*2.2;                 // 네트에서 떨어진 거리
+  depth=clamp(depth,0.8,Math.min(6.5,1.8+pw*5));              // 약하게 치면 멀리 못 감
+  const lx=clamp(aimX,-1,1)*W;
+  let type,T,h;
+  if(jy>0.25 && y>1.9 && pw>=0.6){ type='jsmash'; T=0.8; h=0.12; }
+  else if(y>2.0 && pw>=0.75){ type='smash'; T=0.95; h=0.25; }
+  else if(depth<2.6 && pw<0.5){ type='drop'; T=1.6; h=1.1; }
+  else if(y<1.5){ type='drive'; T=1.1+depth*0.07; h=0.6; }
+  else { type='clear'; T=1.3+depth*0.11; h=2.2+depth*0.12; }
+  // 오차 반경: 세게 칠수록, 멀리서 칠수록 커짐 → 구석을 노리면 아웃 위험
+  const spread=0.22+Math.pow(pw,3)*0.55+Math.max(0,(d||1)-0.9)*0.6+(pw>0.93?0.45:0)+(type==='jsmash'?0.12:0);
+  return {lx,lz:dir*depth,T,h,type,spread,depth};
+}
+function servePlan(team,aimX,aimZ,pw,dbl){
+  const dir=team==='A'?1:-1, hw=dbl?C.hw:C.hws, W=hw-0.3;
+  const depth=clamp(2.3+pw*3.8+clamp(aimZ,-1,1)*0.8,2.0,6.4);
+  return {lx:clamp(aimX,-1,1)*W*0.8, lz:dir*depth, T:1.6+pw*0.4, h:1.8, type:'serve', spread:0.2+(pw>0.93?0.5:0), depth};
+}
+function scatter(pl){ const r=pl.spread*Math.sqrt(Math.random()), a=Math.random()*Math.PI*2; return [pl.lx+Math.cos(a)*r, pl.lz+Math.sin(a)*r]; }
+// CPU: 상대가 없는 빈 곳을 골라 조준
+function cpuAim(p){
+  const opp=Object.values(G.pl).filter(q=>q.team!==p.team), dir=p.team==='A'?1:-1, W=(G.dbl?C.hw:C.hws)-0.3;
+  let best=null;
+  for(let i=0;i<8;i++){
+    const ax=rand(-0.9,0.9), dz=rand(1.2,6.0), x=ax*W, z=dir*dz;
+    const score=Math.min(...opp.map(q=>Math.hypot(q.x-x,q.z-z)))+rand(0,0.8);
+    if(!best||score>best.s) best={s:score,ax,dz};
+  }
+  p.aimX=best.ax; p.aimZ=clamp((best.dz-(1.4+p.pow*4.4))/2.2,-1,1);
+}
 function doServe(p,pw){
-  const dir=p.team==='A'?1:-1, hw=G.dbl?C.hw:C.hws;
-  let lz=dir*clamp(2.3+pw*3.8,2.3,6.4), lx=rand(-hw*0.6,hw*0.6);
-  if(pw>0.93 && Math.random()<0.4) lz=dir*(C.hl+rand(0.2,0.8));   // 너무 세게 = 아웃 위험
-  launch(lx,lz,1.6+pw*0.4,1.8,p.team,false);
+  if(p.cpu){ p.pow=pw; cpuAim(p); p.aimZ=rand(-0.5,0.5); }
+  const pl=servePlan(p.team,p.aimX||0,p.aimZ||0,pw,G.dbl), [lx,lz]=scatter(pl);
+  launch(lx,lz,pl.T,pl.h,p.team,false);
   p.cool=0.4; G.ph='rally';
   hostEvent('hit','');
 }
 function doHit(p,d){
-  const dir=p.team==='A'?1:-1, hw=G.dbl?C.hw:C.hws, y=G.sh.y, pw=p.pow;
-  let a,b,T,h,name='';
-  if(p.jy>0.25 && y>1.9 && pw>=0.6){ [a,b,T,h]=[2.0,4.8,0.8,0.12]; name='점프 스매시!'; }   // 점프 중 높은 공 = 더 빠르고 날카롭게
-  else if(y>2.0 && pw>=0.75){ [a,b,T,h]=[2.4,5.4,0.95,0.25]; name='스매시!'; }
-  else if(pw<0.35){ [a,b,T,h]=[0.9,2.4,1.65,1.2]; }                       // 약하게 = 드롭
-  else if(pw<0.75){ if(y<1.5) [a,b,T,h]=[3.2,5.4,1.35,0.7]; else [a,b,T,h]=[4.4,6.0,2.0,3.0]; }
-  else [a,b,T,h]=[5.3,6.5,1.75,2.6];                                       // 세게 = 깊은 클리어
-  let lz=dir*rand(a,b);
-  let lx=clamp(rand(-hw*0.55,hw*0.55)+p.ax*hw*0.5,-hw+0.25,hw-0.25);
-  let net=false;
-  const err=0.03+Math.max(0,d-1.0)*0.25+(pw>0.93?0.25:0)+(name?0.04:0);   // 멀리서·과한 힘 = 실수 확률↑
-  if(Math.random()<err){
-    if(pw<0.5 || Math.random()<0.4){ net=true; lz=-dir*rand(0.05,0.25); h=0.2; T=0.6; }
-    else if(Math.random()<0.5) lz=dir*(C.hl+rand(0.2,1.0));
-    else lx=(Math.sign(lx)||1)*(hw+rand(0.2,0.8));
-  }
+  const dir=p.team==='A'?1:-1, y=G.sh.y, pw=p.pow;
+  if(p.cpu) cpuAim(p);
+  const pl=aimPlan(p.team,p.aimX||0,p.aimZ||0,pw,y,p.jy,G.dbl,d);
+  let [lx,lz]=scatter(pl), T=pl.T, h=pl.h, net=false;
+  const name = pl.type==='jsmash'?'점프 스매시!':pl.type==='smash'?'스매시!':'';
+  // 네트에 걸리는 실수: 멀리서 치거나 아주 낮은 공일수록
+  if(Math.random() < 0.02+Math.max(0,d-1.0)*0.15+(y<0.8?0.08:0)){ net=true; lz=-dir*rand(0.05,0.25); h=0.2; T=0.6; }
   launch(lx,lz,T,h,p.team,net);
   p.cool=0.35; p.swT=0;
   hostEvent('hit',name);
@@ -524,6 +555,7 @@ function applySwing(uid,m){
   const mb=memberByUid(uid); if(!mb || G.ph==='lobby') return;
   const p=G.pl[mb.slot]; if(!p || p.uid!==uid) return;
   p.pow=clamp(+m.p||0,0,1); p.swT=0.32;   // 떼는 순간부터 0.32초 동안 맞으면 타격
+  p.aimX=clamp(+m.ax||0,-1,1); p.aimZ=clamp(+m.az||0,-1,1);   // 조준 방향
 }
 function snapshot(){
   const sh=G.sh, f=sh.fl;
@@ -991,7 +1023,7 @@ function updateHud(force){
   if(!inGame) $('menu').classList.remove('on');
   const t=$('touch'); t.classList.toggle('on',IS_TOUCH); t.classList.toggle('player',player); t.classList.toggle('walker',!player);
   $('help').classList.toggle('hidden',IS_TOUCH);
-  $('help').textContent = player ? '←→↑↓ 이동 · A 누르면 힘 모으기 → 떼면 스윙 · 스페이스 점프 · Enter 채팅'
+  $('help').textContent = player ? '←→↑↓ 이동 · A 누른 채 방향키 = 조준 → 떼면 스윙 · 스페이스 점프 · Enter 채팅'
                                  : '←→↑↓ 이동 · A 스윙 연습 · 스페이스 점프 · Enter 채팅 · 👀 시점 변경';
   $('bPause').textContent = S&&S.ph==='paused'?'경기 재개':'일시정지';
 }
@@ -1037,16 +1069,16 @@ function backHome(t){ resetAll(true); setStatus(t||''); }
    7. 조작 (키보드 · 터치) 와 내 캐릭터
    ========================================================================== */
 const keys={};
-const local={x:0,z:-9.5,ry:0,st:0,g:0,charging:false,chargeT:0,swingT:0,swingKind:4,kind:2,ax:0,moving:false,camYaw:0,jy:0,vy:0};
+const local={aimX:0,aimZ:0,inX:0,inZ:0,x:0,z:-9.5,ry:0,st:0,g:0,charging:false,chargeT:0,swingT:0,swingKind:4,kind:2,ax:0,moving:false,camYaw:0,jy:0,vy:0};
 function jump(){ if(!mode||!myUid) return; if(local.jy>0.001||local.vy>0) return; local.vy=4.6; sfxJump(); sendMove(true); }
 const joy={x:0,y:0,id:null};
-function chargeStart(){ if(local.charging) return; local.charging=true; local.chargeAt=performance.now(); local.chargeT=0; }
+function chargeStart(){ if(local.charging) return; local.charging=true; local.chargeAt=performance.now(); local.chargeT=0; local.aimX=local.inX; local.aimZ=local.inZ; local.cand=null; }
 function chargeRelease(){
   if(!local.charging) return;
   local.charging=false;
   const pw=Math.min(1,local.chargeT/GAUGE_TIME);
   local.swingT=0.42; local.swingKind = local.kind===3?5:4; local.g=0;
-  if(amPlayerNow()) sendToHost({t:'sw',p:r2(pw)});
+  if(amPlayerNow()) sendToHost({t:'sw',p:r2(pw),ax:r2(local.aimX),az:r2(local.aimZ)});
   sendMove(true);
 }
 addEventListener('keydown',e=>{
@@ -1109,6 +1141,14 @@ function updateLocal(dt){
     if(S.ph==='serve' && S.sv===myUid && S.sp){ local.x=S.sp[0]; local.z=S.sp[1]; }
     local.ry=team==='A'?0:Math.PI;
     local.ax=(Math.abs(jx)>0.35?Math.sign(jx):0)*xs;
+    // 조준: 힘 모으는 동안 누른 방향 (마지막으로 누른 방향을 기억)
+    local.inX=jx*xs; local.inZ=jz;
+    // 0.1초 이상 유지한 방향만 확정 → 키를 떼는 순간의 흔들림이 조준을 바꾸지 않음
+    if(local.charging && Math.hypot(jx,jz)>0.3){
+      const cx=clamp(jx*1.15,-1,1)*xs, cz=clamp(jz*1.15,-1,1);
+      if(!local.cand || Math.hypot(cx-local.cand.x,cz-local.cand.z)>0.25) local.cand={x:cx,z:cz,t:performance.now()};
+      else if(performance.now()-local.cand.t>100){ local.aimX=cx; local.aimZ=cz; }
+    } else local.cand=null;
     // 셔틀콕 높이를 보고 오버헤드/언더 스윙 자세 선택
     const sp=shuttleNow(); local.kind = sp && sp.y<1.5 && Math.hypot(sp.x-local.x,sp.z-local.z)<4 ? 3 : 2;
   } else {
@@ -1314,6 +1354,32 @@ const shuttle=new THREE.Group();
 scene.add(shuttle); shuttle.visible=false;
 const shShadow=new THREE.Mesh(new THREE.CircleGeometry(0.2,20),new THREE.MeshBasicMaterial({color:0x2a2a50,transparent:true,opacity:0.35,depthWrite:false}));
 shShadow.rotation.x=-Math.PI/2; scene.add(shShadow);
+const aimG=new THREE.Group(); aimG.visible=false; scene.add(aimG);
+const aimDisc=new THREE.Mesh(new THREE.CircleGeometry(1,36),new THREE.MeshBasicMaterial({color:0x3ee07a,transparent:true,opacity:0.22,depthWrite:false}));
+const aimEdge=new THREE.Mesh(new THREE.RingGeometry(0.86,1,40),new THREE.MeshBasicMaterial({color:0x3ee07a,transparent:true,opacity:0.95,depthWrite:false}));
+const aimDot=new THREE.Mesh(new THREE.CircleGeometry(0.09,16),new THREE.MeshBasicMaterial({color:0xffffff,depthWrite:false}));
+[aimDisc,aimEdge,aimDot].forEach(m=>{ m.rotation.x=-Math.PI/2; aimG.add(m); });
+// 멀리서도 보이도록 과녁 위에 떠 있는 화살표
+const aimArrow=new THREE.Mesh(new THREE.ConeGeometry(0.22,0.45,16),new THREE.MeshBasicMaterial({color:0x3ee07a}));
+aimArrow.rotation.x=Math.PI; aimG.add(aimArrow);
+const aimArrowEdge=new THREE.Mesh(aimArrow.geometry,new THREE.MeshBasicMaterial({color:0x4a2f22,side:THREE.BackSide})); aimArrowEdge.scale.setScalar(1.15); aimArrow.add(aimArrowEdge); aimDisc.position.y=0.035; aimEdge.position.y=0.036; aimDot.position.y=0.037;
+function updateAim(now){
+  const show = local.charging && amPlayerNow() && S && (S.ph==='rally' || (S.ph==='serve' && S.sv===myUid));
+  aimG.visible=!!show; if(!show){ $('aimTip').style.display='none'; return; }
+  const team=mySlot()[0], sp=shuttleNow(), d=sp?Math.hypot(sp.x-local.x,sp.z-local.z):1;
+  const pl = S.ph==='serve' ? servePlan(team,local.aimX,local.aimZ,local.g,S.dbl)
+           : aimPlan(team,local.aimX,local.aimZ,local.g,sp?sp.y:1.6,local.jy,S.dbl,Math.min(d,1.2));
+  aimG.position.set(pl.lx,0,pl.lz);
+  const vr=Math.max(0.35,pl.spread); aimDisc.scale.setScalar(vr); aimEdge.scale.setScalar(vr);
+  aimArrow.position.y=0.75+0.12*Math.sin(now/150); aimDot.scale.setScalar(1+0.2*Math.sin(now/90));
+  // 색: 원이 코트 안 = 초록 / 걸침 = 주황 / 중심이 밖 = 빨강
+  const hw=S.dbl?C.hw:C.hws, cx=Math.abs(pl.lx), cz=Math.abs(pl.lz);
+  const col = (cx>hw||cz>C.hl) ? 0xee4444 : (cx+pl.spread>hw||cz+pl.spread>C.hl) ? 0xff9b3d : 0x3ee07a;
+  aimDisc.material.color.setHex(col); aimEdge.material.color.setHex(col); aimArrow.material.color.setHex(col);
+  const tip=$('aimTip'); tip.style.display='block';
+  const nm={jsmash:'점프 스매시',smash:'스매시',drop:'드롭',drive:'드라이브',clear:'클리어',serve:'서브'}[pl.type];
+  tip.textContent=`${nm} · ${col===0x3ee07a?'안전':col===0xff9b3d?'라인 근처 (아웃 주의)':'아웃 예상!'}`;
+}
 const ldRing=new THREE.Mesh(new THREE.RingGeometry(0.26,0.36,28),new THREE.MeshBasicMaterial({color:0xffc93c,transparent:true,opacity:0.6,depthWrite:false,side:THREE.DoubleSide}));
 ldRing.rotation.x=-Math.PI/2; ldRing.position.y=0.03; scene.add(ldRing);
 
@@ -1518,7 +1584,8 @@ function frame(now){
     ldRing.visible=flLocal.id>=0 && S.ph==='rally';
     if(ldRing.visible){ ldRing.position.x=flLocal.lx; ldRing.position.z=flLocal.lz; ldRing.scale.setScalar(1+0.15*Math.sin(now/120)); }
     drawScoreboard(S.sc[0],S.sc[1]);
-  } else { shuttle.visible=false; shShadow.visible=false; ldRing.visible=false; if(S) drawScoreboard('-','-'); }
+    updateAim(now);
+  } else { shuttle.visible=false; shShadow.visible=false; ldRing.visible=false; aimG.visible=false; $('aimTip').style.display='none'; if(S) drawScoreboard('-','-'); }
   // 카메라
   const [cp,cl]=cameraTarget(now/1000), ck=1-Math.exp(-dt*5);
   cp.x=clamp(cp.x,-11.6,11.6); cp.z=clamp(cp.z,-14.6,14.6); cp.y=Math.min(cp.y,9.5);   // 카메라가 벽 밖으로 나가지 않게
@@ -1559,7 +1626,7 @@ function hudFrame(){
   gg.classList.toggle('on',showG && myUid>0);
   if(showG){ const v=local.charging?local.g:gg._last||0; if(local.charging) gg._last=local.g;
     $('gCover').style.width=(100-v*100)+'%';
-    $('gLbl').textContent = v<0.35?'살살 (드롭)':v<0.75?'보통 (클리어)':v<0.92?'세게 (스매시)':'너무 셈! 아웃 주의'; }
+    $('gLbl').textContent = v<0.35?'살살':v<0.75?'보통':v<0.92?'세게':'너무 셈! 아웃 주의'; }
   // 상태 변화 반영 (선수/관중 전환 등)
   const pn=amPlayerNow(); if(pn!==hudFrame._p){ hudFrame._p=pn; updateHud(true); }
 }
