@@ -108,6 +108,7 @@
   .slot img{width:34px;height:34px;object-fit:contain}
   .slot.A{border-color:#4a7fe0}.slot.B{border-color:#e25555}.slot.me{background:#ffe9a8}
   .slot.empty{color:#b7a596;justify-content:center}
+  .kick{padding:0;width:26px;height:26px;border-radius:50%;font-size:13px;background:#ee5a5a;border-width:2px;box-shadow:0 2px 0 #4a2f22;flex:none}
   .specs{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}
   .specs .slot{min-height:36px;padding:3px 7px;font-size:12px;border-color:#c9b8a6}
   .specs .slot img{width:26px;height:26px}
@@ -249,7 +250,7 @@
    - 참가자는 PeerJS(브라우저끼리 직접 연결)로 방장에게 접속
    - 음성은 마이크를 켠 사람이 다른 모두에게 직접 전송(메시 방식)
    ========================================================================== */
-const VERSION = '2.5';
+const VERSION = '3.0';
 const $ = id => document.getElementById(id);
 const clamp = (v,a,b) => Math.max(a,Math.min(b,v));
 const rand = (a,b) => a+Math.random()*(b-a);
@@ -260,7 +261,8 @@ const qs = new URLSearchParams(location.search);
 /* ---------------- 설정값 (필요하면 여기만 수정) ---------------- */
 const PREFIX = 'golmok-badminton-';  // 방 코드 앞에 붙는 고유 이름
 const SHARE_URL = '';                // 초대 링크 주소. 비우면 현재 주소 사용
-const CLUB_CHECK = '37662605782bc1667d7b452e3a60f26180155f485d038330199e2a0c5a3ac985'; // 모임 암호 확인값(암호 자체가 아닌 해시). 빌드할 때 넣음. 비면 잠금 없음
+const CLUB_CHECK = '37662605782bc1667d7b452e3a60f26180155f485d038330199e2a0c5a3ac985';
+const RELAY_URL = 'wss://golmok-relay.souohoo.workers.dev';  // 중계 서버 주소 (wss://...). 비면 기기끼리 직접 연결(P2P)만 사용 // 모임 암호 확인값(암호 자체가 아닌 해시). 빌드할 때 넣음. 비면 잠금 없음
 const MAX_SPEC = 10;                 // 관중 최대 인원
 const GAUGE_TIME = 0.9;              // 게이지가 가득 차는 시간(초)
 const SPEED_LABEL = {1.3:'느림',1:'보통',0.8:'빠름'};
@@ -313,8 +315,72 @@ async function proofFor(code){ return LOCK_ON ? await sha(clubKey+':'+code) : ''
   $('inPw').addEventListener('keydown',e=>{ if(e.key==='Enter') go(); });
 })();
 
+/* ---------------- 중계 서버 연결 (Cloudflare) ----------------
+   방장·참가자 모두 같은 중계 서버에 WebSocket으로 접속 → 통신사·카톡 브라우저 상관없이 연결
+   중계 서버에 못 붙으면 기존 방식(기기끼리 직접 연결)으로 자동 전환 */
+const RELAY = qs.get('relay') || (/^wss?:\/\//.test(RELAY_URL) ? RELAY_URL.replace(/\/$/,'') : '');
+let netMode = 'p2p';                     // 'relay' | 'p2p'
+class RelaySock{
+  constructor(url){ this.h={}; this.open=false; this.done=false;
+    try{ this.ws=new WebSocket(url); }catch(e){ setTimeout(()=>this.fin(),0); return; }
+    this.ws.onopen=()=>{ this.open=true; this.emit('open'); };
+    this.ws.onmessage=e=>{ let m; try{ m=JSON.parse(e.data); }catch(_){ return; } this.emit('data',m); };
+    this.ws.onclose=()=>this.fin(); this.ws.onerror=()=>this.emit('error'); }
+  fin(){ if(this.done) return; this.done=true; this.open=false; this.emit('close'); }
+  on(ev,f){ (this.h[ev]=this.h[ev]||[]).push(f); return this; }
+  emit(ev,a){ (this.h[ev]||[]).forEach(f=>{ try{ f(a); }catch(e){ console.warn(e); } }); }
+  send(m){ if(!this.open) return; if(this.ws.readyState!==1){ this.fin(); return; } try{ this.ws.send(typeof m==='string'?m:JSON.stringify(m)); }catch(e){} }
+  close(){ try{ this.ws.close(); }catch(e){} this.fin(); }
+}
+let hostSock=null, hostKey='';
+const relayConns=new Map();             // (방장) 중계 서버가 알려준 참가자 번호 -> 가상 연결
+function fakeConn(cid){
+  const h={}; const fc={ peer:cid, open:true,
+    on(ev,f){ (h[ev]=h[ev]||[]).push(f); return fc; }, emit(ev,a){ (h[ev]||[]).forEach(f=>{ try{ f(a); }catch(e){ console.warn(e); } }); },
+    send(m){ if(hostSock) hostSock.send({to:cid,d:m}); },
+    close(){ if(fc.open){ fc.open=false; if(hostSock) hostSock.send({kick:cid}); } } };
+  return fc;
+}
+function relayHostOpen(cb){
+  const s=new RelaySock(`${RELAY}/room/${roomCode}?role=host&key=${hostKey}`); hostSock=s;
+  s.on('data',m=>{
+    if(s!==hostSock) return;
+    if(m.ev==='hosted'){
+      const live=new Set(m.cids||[]);
+      relayConns.forEach((fc,cid)=>{ if(!live.has(cid)){ relayConns.delete(cid); fc.open=false; fc.emit('close'); } });
+      setConnBanner(''); if(cb){ cb(true); cb=null; } return; }
+    if(m.ev==='taken'){ if(cb){ cb('taken'); cb=null; } return; }
+    if(m.ev==='open'){ const fc=fakeConn(m.from); relayConns.set(m.from,fc); hostOnConn(fc); return; }
+    if(m.ev==='close'){ const fc=relayConns.get(m.from); if(fc){ relayConns.delete(m.from); fc.open=false; fc.emit('close'); } return; }
+    if(m.from){ const fc=relayConns.get(m.from); if(fc) fc.emit('data',m.d); }
+  });
+  s.on('close',()=>{
+    if(s!==hostSock) return;
+    if(cb){ cb(false); cb=null; return; }
+    if(mode!=='host') return;
+    // 방장 쪽 연결이 끊김(앱 전환 등): 같은 방 코드로 자동 재접속
+    setConnBanner('🔄 연결 서버에 다시 연결하는 중...');
+    setTimeout(()=>{ if(mode==='host' && s===hostSock) relayHostOpen(); },1500);
+  });
+}
+// 음성 대화용 연결 (게임 연결과 별개, 실패해도 게임은 계속)
+function startVoicePeer(){
+  if(typeof Peer==='undefined') return;
+  try{
+    peer=new Peer(undefined,peerOpts());
+    peer.on('open',id=>{ myPeerId=id;
+      if(mode==='host'){ members[0].id=id; pushRoster(); }
+      else if(hostConn && hostConn.open && myUid) hostConn.send({t:'vid',id}); });
+    peer.on('call',onIncomingCall);
+    peer.on('disconnected',()=>{ try{ peer.reconnect(); }catch(e){} });
+    peer.on('error',e=>console.warn('voice peer',e.type));
+  }catch(e){}
+}
+
 /* ---------------- 공통 상태 ---------------- */
 let mode = null;                // 'host' | 'client' | 'practice'
+const DEVICE_ID=(()=>{ try{ let d=localStorage.getItem('gb_dev'); if(!d){ d=Math.random().toString(36).slice(2)+Date.now().toString(36); localStorage.setItem('gb_dev',d); } return d; }catch(e){ return ''; } })();
+let banCount=0;
 let peer = null, hostConn = null, myPeerId = null, myUid = 0;
 let members = [];               // [{uid,id,name,animal,slot,mic,cpu}]
 let settings = {target:21, cpu:1, speed:1};
@@ -579,8 +645,11 @@ function hostCommand(c){
    ========================================================================== */
 let uidSeq=1;
 const lastSeen=new Map(), chatGate=new Map();
-function broadcast(msg){ conns.forEach(c=>{ try{ if(c.open) c.send(msg); }catch(e){} }); }
-function rosterMsg(){ return {t:'ro', m:members.map(x=>({uid:x.uid,id:x.id,name:x.name,animal:x.animal,slot:x.slot,mic:!!x.mic,cpu:!!x.cpu})), set:settings, code:roomCode}; }
+function broadcast(msg){
+  if(netMode==='relay'){ if(hostSock && conns.size) hostSock.send({to:'*',d:msg}); return; }   // 중계 서버가 한 번에 모두에게 전달
+  conns.forEach(c=>{ try{ if(c.open) c.send(msg); }catch(e){} });
+}
+function rosterMsg(){ return {t:'ro', bans:banned.devs.size+banned.tokens.size?Math.max(banned.devs.size,banned.tokens.size):0, m:members.map(x=>({uid:x.uid,id:x.id,name:x.name,animal:x.animal,slot:x.slot,mic:!!x.mic,cpu:!!x.cpu})), set:settings, code:roomCode}; }
 function pushRoster(){ const m=rosterMsg(); broadcast(m); onRoster(m); }
 function hostEvent(k,x){ const m={t:'ev',k,x}; broadcast(m); onEvent(m); }
 function sendTo(uid,m){ if(uid===myUid) onMessage(m); else { const c=conns.get(uid); if(c&&c.open) c.send(m); } }
@@ -606,6 +675,7 @@ function hostHandle(uid,m){
       pushRoster(); break; }
     case 'ani': if(ANIMALS[m.a]){ mb.animal=m.a; pushRoster(); } break;
     case 'mic': mb.mic=!!m.on; pushRoster(); break;
+    case 'vid': if(netMode==='relay' && typeof m.id==='string'){ mb.id=m.id.slice(0,64); pushRoster(); } break;
     case 'set': if(uid!==myUid || G.ph!=='lobby') return;
       if([11,15,21].includes(+m.target)) settings.target=+m.target;
       if([0,1,2].includes(+m.cpu)) settings.cpu=+m.cpu;
@@ -614,6 +684,8 @@ function hostHandle(uid,m){
     case 'start': if(uid!==myUid || G.ph!=='lobby') return;
       { const err=startGame(); if(err) sendTo(uid,{t:'ev',k:'err',x:err}); } break;
     case 'cmd': if(uid===myUid) hostCommand(m.c); break;
+    case 'kick': if(uid===myUid) kickMember(+m.u); break;
+    case 'unban': if(uid===myUid){ banned.tokens.clear(); banned.devs.clear(); pushRoster(); hostEvent('toast','내보낸 사람 입장 제한을 풀었어요'); } break;
   }
 }
 function hostOnConn(conn){
@@ -627,6 +699,8 @@ function hostOnConn(conn){
       // 같은 사람이 다시 연결한 경우: 예전 연결을 정리하고 자리를 돌려줌
       const old=token && members.find(x=>x.token===token && !x.cpu);
       if(old) hostDrop(old.uid,true);
+      const dev=String(m.dev||'').slice(0,40);
+      if((token&&banned.tokens.has(token)) || (dev&&banned.devs.has(dev))){ conn.send({t:'reject',r:'🚫 방장이 이 방에서 내보낸 기기예요. 방장에게 문의해 주세요'}); setTimeout(()=>conn.close(),600); return; }
       const ghost=token && ghosts.get(token);
       if(ghost) ghosts.delete(token);
       uid=++uidSeq;
@@ -643,9 +717,10 @@ function hostOnConn(conn){
       if(!slot) slot=freeSlotFor();
       if(!slot){ conn.send({t:'reject',r:'방이 가득 찼어요 (선수 4명 + 관중 10명)'}); setTimeout(()=>conn.close(),600); uid=0; return; }
       const name=String(m.name||'친구').slice(0,8), animal=ANIMALS[m.animal]?m.animal:'duck';
-      members.push({uid,id:conn.peer,name,animal,slot,mic:false,cpu:false,token});
+      members.push({uid,id:netMode==='relay'?(String(m.vid||'').slice(0,64)||null):conn.peer,name,animal,slot,mic:false,cpu:false,token,dev});
       if(!pos.has(uid)) pos.set(uid, ghost&&ghost.pos&&slot==='S' ? ghost.pos : spawnPos());
       conns.set(uid,conn); lastSeen.set(uid,performance.now());
+      if(netMode==='relay' && hostSock) hostSock.send({admit:conn.peer});
       conn.send({t:'welcome',uid,v:VERSION});
       pushRoster();
       if(S) conn.send(snapshot());
@@ -656,6 +731,15 @@ function hostOnConn(conn){
   });
   conn.on('close',()=>uid&&hostDrop(uid));
   conn.on('error',()=>uid&&hostDrop(uid));
+}
+// 방장 권한: 내보내기 (이 방이 열려 있는 동안 같은 기기는 다시 못 들어옴)
+const banned={tokens:new Set(),devs:new Set()};
+function kickMember(uid){
+  const mb=memberByUid(uid); if(!mb || mb.uid===myUid || mb.cpu) return;
+  if(mb.token){ banned.tokens.add(mb.token); ghosts.delete(mb.token); }
+  if(mb.dev) banned.devs.add(mb.dev);
+  const c=conns.get(uid); try{ if(c&&c.open) c.send({t:'kicked'}); }catch(e){}
+  setTimeout(()=>{ hostDrop(uid,true); if(mb.token) ghosts.delete(mb.token); hostEvent('toast',`${mb.name} 님을 내보냈어요`); },150);
 }
 const ghosts=new Map();   // 끊긴 사람 기억 (2분 안에 다시 오면 자리 복구)
 function hostDrop(uid,silent){
@@ -716,6 +800,22 @@ function hostCreate(practice){
   if(practice){ settings.cpu=1; roomCode=''; enterWorld(); startHostLoop(); pushRoster();
     startGame(); $('room').classList.remove('on');   // 혼자 연습은 바로 CPU와 경기 시작
     flash('CPU와 연습 시작!',1500); return; }
+  if(RELAY){
+    netMode='relay'; setStatus('연결 서버에 접속하는 중...',true);
+    const tryRelay=(tries)=>{
+      roomCode=makeCode(); hostKey=Math.random().toString(36).slice(2)+Date.now().toString(36);
+      relayHostOpen(async ok=>{
+        if(mode!=='host') return;
+        if(ok===true){ hostProof=await proofFor(roomCode); setStatus('',true); enterWorld(); startHostLoop(); pushRoster(); startVoicePeer(); }
+        else if(ok==='taken' && tries<5){ try{ hostSock.close(); }catch(e){} tryRelay(tries+1); }
+        else { netMode='p2p'; hostSock=null; hostCreateP2P(); }        // 중계 서버 실패 → 직접 연결 방식
+      });
+    };
+    tryRelay(0); return;
+  }
+  hostCreateP2P();
+}
+function hostCreateP2P(){
   setStatus('연결 서버에 접속하는 중... (1/2)',true);
   const tryOpen=(tries)=>{
     roomCode=makeCode();
@@ -747,9 +847,21 @@ function clientJoin(){
   if(LOCK_ON && !clubKey){ $('lock').classList.add('on'); mode=null; return; }
   joinInfo={code,name,proof:''}; proofFor(code).then(p=>{ if(joinInfo) joinInfo.proof=p; });
   rejoinToken=Math.random().toString(36).slice(2)+Date.now().toString(36);
-  setStatus('① 연결 서버에 접속하는 중...',true);
-  peer=new Peer(undefined,peerOpts());
   joinOpened=false;
+  if(RELAY){
+    netMode='relay'; setStatus('① 방을 찾는 중...',true);
+    openHostConn(); startVoicePeer();
+    clearTimeout(joinTimer);
+    joinTimer=setTimeout(()=>{ if(mode==='client' && !myUid && netMode==='relay') backHome(joinOpened?'응답이 없어요. 잠시 후 다시 시도해 주세요':'연결 서버에 접속하지 못했어요. 인터넷 연결을 확인해 주세요'); },12000);
+    return;
+  }
+  clientJoinP2P();
+}
+function clientJoinP2P(){
+  netMode='p2p';
+  setStatus('① 연결 서버에 접속하는 중...',true);
+  try{ if(peer) peer.destroy(); }catch(e){}
+  peer=new Peer(undefined,peerOpts());
   peer.on('open',id=>{
     myPeerId=id;
     if(!myUid){ setStatus('② 방을 찾는 중...',true); openHostConn();
@@ -766,13 +878,17 @@ function clientJoin(){
 let joinInfo=null, rejoinToken=null, joinOpened=false;
 const reconn={active:false,since:0,timer:null};
 function openHostConn(){
-  const conn=peer.connect(PREFIX+joinInfo.code,{reliable:true});
+  const conn = netMode==='relay' ? new RelaySock(`${RELAY}/room/${joinInfo.code}?role=client`) : peer.connect(PREFIX+joinInfo.code,{reliable:true});
   hostConn=conn;
   conn.on('open',()=>{ if(conn!==hostConn) return; joinOpened=true; if(!myUid) setStatus('③ 입장하는 중...',true);
-    const send=()=>conn.send({t:'hello',name:joinInfo.name,animal:myAnimal,token:rejoinToken,proof:joinInfo.proof});
+    const send=()=>conn.send({t:'hello',name:joinInfo.name,animal:myAnimal,token:rejoinToken,proof:joinInfo.proof,dev:DEVICE_ID,vid:netMode==='relay'?(myPeerId||''):''});
     if(LOCK_ON && !joinInfo.proof) proofFor(joinInfo.code).then(p=>{ joinInfo.proof=p; send(); }); else send(); });
-  conn.on('data',m=>{ if(conn===hostConn) onMessage(m); });
-  conn.on('close',()=>{ if(conn!==hostConn || mode!=='client') return; if(!myUid) backHome('방에 연결하지 못했어요'); else startReconnect(); });
+  conn.on('data',m=>{ if(conn!==hostConn) return;
+    if(m.t==='noroom'){ if(!myUid){ clearTimeout(joinTimer); joinOpened=false; hostConn=null; conn.close(); clientJoinP2P(); } return; }   // 중계 서버에 방 없음 → 직접 연결 방식 방일 수 있음
+    if(m.t==='hostaway'){ setConnBanner('⏳ 방장 연결을 기다리는 중... (방장이 화면을 나갔을 수 있어요)'); lastHostMsg=performance.now(); return; }
+    if(m.t==='hostback'){ setConnBanner(''); lastHostMsg=performance.now(); return; }
+    onMessage(m); });
+  conn.on('close',()=>{ if(conn!==hostConn || mode!=='client') return; if(!myUid){ if(netMode==='relay' && !joinOpened) clientJoinP2P(); else backHome('방에 연결하지 못했어요'); } else startReconnect(); });
   conn.on('error',()=>{});
 }
 function startReconnect(){
@@ -781,8 +897,8 @@ function startReconnect(){
   const tick=()=>{
     if(mode!=='client' || !reconn.active) return;
     if(performance.now()-reconn.since>120000){ reconn.active=false; backHome('방장과 다시 연결하지 못했어요.\n방장이 방을 닫았거나 화면을 오래 나가 있었을 수 있어요'); return; }
-    try{ if(peer.disconnected && !peer.destroyed) peer.reconnect(); }catch(e){}
-    if(peer.open && !(hostConn && hostConn.open)){ const old=hostConn; hostConn=null; try{ old&&old.close(); }catch(e){} openHostConn(); }
+    try{ if(peer && peer.disconnected && !peer.destroyed) peer.reconnect(); }catch(e){}
+    if((netMode==='relay' || (peer && peer.open)) && !(hostConn && hostConn.open)){ const old=hostConn; hostConn=null; try{ old&&old.close(); }catch(e){} openHostConn(); }
     reconn.timer=setTimeout(tick,4000);
   };
   tick();
@@ -803,7 +919,7 @@ function sendToHost(m){
 }
 setInterval(()=>{
   if(mode!=='client' || !myUid) return;
-  if(hostConn && hostConn.open) hostConn.send({t:'p'});
+  if(hostConn && hostConn.open && netMode!=='relay') hostConn.send({t:'p'});
   if(reconn.active) return;
   const gap=lastHostMsg?performance.now()-lastHostMsg:0;
   if(gap>25000){ const old=hostConn; hostConn=null; try{ old&&old.close(); }catch(e){} startReconnect(); }   // 오래 조용하면 새로 연결
@@ -814,7 +930,7 @@ document.addEventListener('visibilitychange',()=>{
   if(document.hidden) return;
   keepAwake();
   try{ if(peer && peer.disconnected && !peer.destroyed) peer.reconnect(); }catch(e){}
-  if(mode==='host') lastSeen.forEach((t,k)=>lastSeen.set(k,performance.now()));
+  if(mode==='host'){ lastSeen.forEach((t,k)=>lastSeen.set(k,performance.now())); if(netMode==='relay' && (!hostSock || !hostSock.open)) relayHostOpen(); }
   if(mode==='client' && myUid){ lastHostMsg=performance.now(); if(!hostConn || !hostConn.open) startReconnect(); }
 });
 // 플레이 중 화면 자동 꺼짐 방지 (지원 기기만)
@@ -838,7 +954,8 @@ function onMessage(m){
       if(reconn.active || myUid){ myUid=m.uid; reconn.active=false; clearTimeout(reconn.timer); setConnBanner(''); flash('다시 연결됐어요!',1300); syncVoice(); }
       else { myUid=m.uid; enterWorld(); }
       break;
-    case 'reject': backHome(m.r); break;
+    case 'reject': backHome({ROOM_CLOSED:'방장이 방을 닫았어요',ROOM_FULL:'방이 가득 찼어요'}[m.r]||m.r); break;
+    case 'kicked': backHome('🚫 방장이 방에서 내보냈어요'); break;
   }
 }
 let lastRs=-1, prevPh=null;
@@ -857,7 +974,8 @@ function onSnapshot(m){
   }
 }
 function onRoster(m){
-  if(mode==='client'){ members=m.m; settings=m.set; }   // 방장은 자기 원본 목록 유지 (재접속 토큰 보존)
+  if(mode==='client'){ members=m.m; settings=m.set; }
+  banCount=m.bans||0;   // 방장은 자기 원본 목록 유지 (재접속 토큰 보존)
   roomCode=m.code||roomCode;
   renderRoom(); updateHud(true); syncVoice(); syncAvatars();
 }
@@ -966,7 +1084,8 @@ function enterWorld(){
 function renderRoom(){
   if(!mode) return;
   const mine=me(), host=mode==='host'||mode==='practice', lobby=!S||S.ph==='lobby';
-  const card=(m,cls)=>`<img src="${ASSET[m.animal]}" alt=""><span>${esc(m.name)}${m.uid===myUid?' (나)':''}${m.mic?' 🎤':''}${m.uid===1&&mode!=='practice'?' 👑':''}</span>`;
+  const kickBtn=m=> mode==='host' && m.uid!==myUid && !m.cpu ? `<button class="kick" data-k="${m.uid}" title="내보내기">✕</button>` : '';
+  const card=(m,cls)=>`<img src="${ASSET[m.animal]}" alt=""><span style="flex:1">${esc(m.name)}${m.uid===myUid?' (나)':''}${m.mic?' 🎤':''}${m.uid===1&&mode!=='practice'?' 👑':''}</span>${kickBtn(m)}`;
   let h = mode==='practice'
     ? `<h2>혼자 연습하기</h2><div style="font-size:12px;color:#7a6252;font-weight:700">"모든 빈자리"를 고르면 CPU 파트너와 복식으로 칠 수 있어요.</div>`
     : `<h2>대기실</h2><div style="font-size:12px;color:#7a6252;font-weight:700">아래 코드나 링크를 모임원에게 보내주세요</div>
@@ -984,6 +1103,7 @@ function renderRoom(){
     h+=`<div class="sec">관중 ${specs.length}/${MAX_SPEC}</div><div class="specs">${specs.map(m=>`<div class="slot ${m.uid===myUid?'me':''}">${card(m)}</div>`).join('')}
         ${mine&&mine.slot!=='S'&&lobby?'<div class="slot empty" data-s="S">관중석으로</div>':''}</div>`;
   }
+  if(mode==='host') h+=`<div style="font-size:11.5px;color:#7a6252;font-weight:700;margin-top:6px">✕ 버튼: 내보내기 (이 방에는 다시 못 들어와요)${banCount?` · 내보낸 기기 ${banCount}대 <a href="#" id="bUnban" style="color:#2453c8">제한 풀기</a>`:''}</div>`;
   h+=`<div class="sec">내 동물 바꾸기</div><div class="animals" style="margin-top:4px">${ANI_KEYS.map(k=>`<div class="ani ${mine&&mine.animal===k?'on':''}" data-ra="${k}"><img src="${ASSET[k]}" alt="" style="height:38px"></div>`).join('')}</div>`;
   h+=`<div class="row mt">
       <div><label>목표 점수</label><select id="sTarget" ${host&&lobby?'':'disabled'}>${[11,15,21].map(v=>`<option value="${v}" ${settings.target===v?'selected':''}>${v}점</option>`).join('')}</select></div>
@@ -994,6 +1114,9 @@ function renderRoom(){
   h+=`<button class="w sm mt" id="bCloseRoom" style="width:100%">닫기</button>`;
   $('room').innerHTML=h;
   $('room').querySelectorAll('[data-s]').forEach(d=>d.onclick=()=>sendToHost({t:'slot',s:d.dataset.s}));
+  $('room').querySelectorAll('[data-k]').forEach(b=>b.onclick=e=>{ e.stopPropagation(); const mb=memberByUid(+b.dataset.k);
+    if(mb && confirm(`${mb.name} 님을 내보낼까요?\n이 방이 열려 있는 동안 같은 기기로는 다시 못 들어와요.`)) sendToHost({t:'kick',u:mb.uid}); });
+  if($('bUnban')) $('bUnban').onclick=e=>{ e.preventDefault(); if(confirm('내보낸 사람들이 다시 들어올 수 있게 할까요?')) sendToHost({t:'unban'}); };
   $('room').querySelectorAll('[data-ra]').forEach(d=>d.onclick=()=>{ myAnimal=d.dataset.ra; try{localStorage.setItem('gb_ani',myAnimal);}catch(e){} sendToHost({t:'ani',a:myAnimal}); });
   const sendSet=()=>sendToHost({t:'set',target:+$('sTarget').value,speed:+$('sSpeed').value,cpu:+$('sCpu').value});
   ['sTarget','sSpeed','sCpu'].forEach(id=>$(id).onchange=sendSet);
@@ -1055,8 +1178,9 @@ function resetAll(keepStatus){
   clearInterval(hostTimer); clearInterval(hbTimer); hostTimer=hbTimer=null; clearTimeout(joinTimer);
   try{ conns.forEach(c=>c.close()); }catch(e){}
   try{ if(peer) peer.destroy(); }catch(e){}
+  try{ const hs=hostSock; hostSock=null; if(hs) hs.close(); }catch(e){} relayConns.clear(); netMode='p2p';
   conns.clear(); peer=null; hostConn=null; G=null; S=null; mode=null; myUid=0; myPeerId=null; members=[]; lastRs=-1; prevPh=null; lastHostMsg=0;
-  reconn.active=false; clearTimeout(reconn.timer); setConnBanner(''); ghosts.clear();
+  reconn.active=false; clearTimeout(reconn.timer); setConnBanner(''); ghosts.clear(); banned.tokens.clear(); banned.devs.clear();
   try{ if(wakeLock) wakeLock.release(); }catch(e){} wakeLock=null;
   pos.clear(); syncAvatars();
   ['hud','room','menu','touch','chatBar'].forEach(id=>$(id).classList.remove('on'));
@@ -1178,7 +1302,7 @@ function sendMove(force){
   if(hostConn && hostConn.open) hostConn.send(m);
 }
 function localToHost(){ sendMove(); }
-setInterval(()=>{ if(mode==='client') sendMove(); },1000/15);
+setInterval(()=>{ if(mode==='client') sendMove(); },1000/10);   // 초당 10회 (서버 사용량 절약)
 
 /* ==========================================================================
    8. 효과음 (파일 없이 합성)
