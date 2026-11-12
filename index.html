@@ -252,7 +252,7 @@
    - 참가자는 PeerJS(브라우저끼리 직접 연결)로 방장에게 접속
    - 음성은 마이크를 켠 사람이 다른 모두에게 직접 전송(메시 방식)
    ========================================================================== */
-const VERSION = '3.2';
+const VERSION = '3.3';
 const $ = id => document.getElementById(id);
 const clamp = (v,a,b) => Math.max(a,Math.min(b,v));
 const rand = (a,b) => a+Math.random()*(b-a);
@@ -366,13 +366,15 @@ function relayHostOpen(cb){
   });
 }
 // 음성 대화용 연결 (게임 연결과 별개, 실패해도 게임은 계속)
+// 내 음성 주소를 방장에게 알림 — 입장 완료 전/후 어느 때 준비돼도 반드시 전달
+function sendVid(){ if(mode==='client' && netMode==='relay' && myUid && myPeerId && hostConn && hostConn.open) hostConn.send({t:'vid',id:myPeerId}); }
 function startVoicePeer(){
   if(typeof Peer==='undefined') return;
   try{
     peer=new Peer(undefined,peerOpts());
     peer.on('open',id=>{ myPeerId=id;
       if(mode==='host'){ members[0].id=id; pushRoster(); }
-      else if(hostConn && hostConn.open && myUid) hostConn.send({t:'vid',id}); });
+      else sendVid(); });
     peer.on('call',onIncomingCall);
     peer.on('disconnected',()=>{ try{ peer.reconnect(); }catch(e){} });
     peer.on('error',e=>console.warn('voice peer',e.type));
@@ -955,8 +957,8 @@ function onMessage(m){
     case 'chat': onChat(m); break;
     case 'welcome':
       clearTimeout(joinTimer); setStatus('',true);
-      if(reconn.active || myUid){ myUid=m.uid; reconn.active=false; clearTimeout(reconn.timer); setConnBanner(''); flash('다시 연결됐어요!',1300); syncVoice(); }
-      else { myUid=m.uid; enterWorld(); }
+      if(reconn.active || myUid){ myUid=m.uid; reconn.active=false; clearTimeout(reconn.timer); setConnBanner(''); flash('다시 연결됐어요!',1300); sendVid(); syncVoice(); }
+      else { myUid=m.uid; enterWorld(); sendVid(); }
       break;
     case 'reject': backHome({ROOM_CLOSED:'방장이 방을 닫았어요',ROOM_FULL:'방이 가득 찼어요'}[m.r]||m.r); break;
     case 'kicked': backHome('🚫 방장이 방에서 내보냈어요'); break;
@@ -1068,6 +1070,13 @@ function syncVoice(){
   const speaking=new Set(members.filter(m=>m.mic && m.id).map(m=>m.id));
   audios.forEach((a,id)=>{ if(!speaking.has(id)){ a.srcObject=null; a.remove(); audios.delete(id); } });
 }
+function deadCall(c){ const pc=c&&c.peerConnection; if(!pc) return false; const st=pc.iceConnectionState||pc.connectionState; return st==='failed'||st==='closed'; }
+setInterval(()=>{
+  if(!mode || mode==='practice' || !peer) return;
+  try{ if(peer.disconnected && !peer.destroyed) peer.reconnect(); }catch(e){}
+  if(mode==='client' && myUid && myPeerId){ const me=members.find(x=>x.uid===myUid); if(me && me.id!==myPeerId) sendVid(); }
+  if(micStream){ outCalls.forEach((c,id)=>{ if(deadCall(c)){ try{c.close();}catch(e){} outCalls.delete(id); } }); syncVoice(); }
+},4000);
 function onIncomingCall(call){
   call.answer();
   call.on('stream',st=>{
