@@ -230,7 +230,7 @@
    - 연결: Cloudflare 중계 서버(기본) → 실패하면 기기끼리 직접 연결(PeerJS)
    - 음성: 마이크를 켠 사람이 다른 모두에게 직접 전송
    ========================================================================== */
-const VERSION = '1.8';
+const VERSION = '1.9';
 const GAME = 'mgh';
 const $ = id => document.getElementById(id);
 const clamp = (v,a,b) => Math.max(a,Math.min(b,v));
@@ -250,7 +250,8 @@ const START_Z = 28;                  // 출발선 = 추격 때 안전선 (술래
 const FIELD = {x:9.5, zMin:0.9, zMax:32.5};
 const HIDE = [{x:-5.8,z:11},{x:5.8,z:7.5},{x:6.3,z:18.5},{x:-6.4,z:22.5}];   // 숨을 수 있는 나무
 const SPD = {walk:1.8, run:3.0};
-const TAG_SPD = SPD.run*1.5;         // 추격 때 술래 속도 = 참가자 달리기의 1.5배
+const TAG_SPD = SPD.run*1.8;         // 추격 때 술래 속도 = 참가자 달리기의 1.8배 (손 끊긴 뒤 2초 기다렸다 출발)
+const FAKE_T = 0.9, FAKE_CD = 2.5;   // 페이크: 돌아보는 시간(초), 다음 페이크까지 간격(초) — 횟수 제한 없음
 const DUR_FAST = 1.5, DUR_SLOW = 5.0; // 외치기 속도 범위(초): 조절선 왼쪽=빠르게, 오른쪽=천천히
 const DUR_PEN = 2.6;                  // 헛짚은 다음 외치기는 이보다 빠르게 못 읽음
 const MIN_G = 0.4, MIN_G_PEN = 0.6;  // 최소 게이지, 헛짚은 뒤 최소 게이지
@@ -361,7 +362,7 @@ let G = null;
 const pos = new Map();          // uid -> {x,z,ry,st,ml}
 const cpuS = new Map();
 const durOf = v => Math.max(G.minDur||DUR_FAST, lerp(DUR_FAST,DUR_SLOW,clamp(v,0,1)));
-function newSim(){ return {spd:0.5,minDur:DUR_FAST,ph:'lobby',tg:0,ch:[],spec:new Set(),rk:[],c:null,lk:0,lid:0,fk:0,fkUsed:false,end:0,ce:0,fz:0,rs:0,mg:MIN_G,acc:new Set(),
+function newSim(){ return {spd:0.5,minDur:DUR_FAST,ph:'lobby',tg:0,ch:[],spec:new Set(),rk:[],c:null,lk:0,lid:0,fk:0,fks:0,fkNext:0,end:0,ce:0,fz:0,rs:0,mg:MIN_G,acc:new Set(),
   res:null,resEnd:0,readyEnd:0,rid:0,cpuSeq:1000,safe:new Set()}; }
 const isTaggerPh = ph => ph==='ready'||ph==='call'||ph==='look';
 function runners(){ return members.filter(m=>m.uid!==G.tg && !G.spec.has(m.uid)).map(m=>m.uid); }
@@ -408,7 +409,7 @@ function startGame(){
 }
 function startRound(tg){
   const now=nowS();
-  G.tg=tg; G.ch=[]; G.spec.clear(); G.c=null; G.spd=0.5; G.minDur=DUR_FAST; G.fk=0; G.fkUsed=false; G.mg=MIN_G; G.acc.clear(); G.safe.clear(); G.res=null; G.rid++;
+  G.tg=tg; G.ch=[]; G.spec.clear(); G.c=null; G.spd=0.5; G.minDur=DUR_FAST; G.fk=0; G.fks=0; G.fkNext=0; G.mg=MIN_G; G.acc.clear(); G.safe.clear(); G.res=null; G.rid++;
   G.rk=makeRocks(settings.rocks); G.ph='ready'; G.readyEnd=now+READY_T; G.end=now+READY_T+settings.time*60; G.rs++;
   const rs=runners();
   for(let i=rs.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [rs[i],rs[j]]=[rs[j],rs[i]]; }   // 판마다 출발 자리 무작위
@@ -443,6 +444,9 @@ function hostTick(dt){
   switch(G.ph){
     case 'ready': if(now>=G.readyEnd){ G.ph='call'; G.c=null; } break;
     case 'call':
+      if(now<G.fk && now>G.fks+GRACE) for(const u of freeRunners()){ const q=pos.get(u);   // 페이크로 돌아본 동안 움직이면 잡힘
+        if(q && q.ml===G.lid && !hiddenAt(q.x,q.z)){ catchRunner(u); if(G.ph!=='call') break; } }
+      if(G.ph!=='call') break;
       if(G.c){ G.c[1]=1/durOf(G.spd); G.c[0]+=dt*G.c[1];                       // 가사 게이지 진행 (모두에게 같은 값)
         if(G.c[0]>=1){ G.ph='look'; G.lk=now; G.lid++; G.acc.clear(); G.c=null; G.minDur=DUR_FAST; } }   // 글씨가 꽉 차야 돌아봄
       else if(now>G.end) endRound('tagger',`⏰ 시간 끝!\n${nameOf(G.tg)} 술래 승리`, G.ch[0]);
@@ -479,7 +483,7 @@ function snapshot(){
   members.forEach(m=>{ const p=pos.get(m.uid); if(!p) return; const f=forcedPos(m.uid,now);
     const q=f||p; let st=f?f.st:p.st; if(G.ph==='chase' && G.safe.has(m.uid)) st=7;
     av.push([m.uid,r2(q.x),r2(q.z),r2(q.ry),st]); });
-  return {t:'s',ht:now,ph:G.ph,tg:G.tg,ch:G.ch,sp:[...G.spec],rk:G.rk,c:G.c?[Math.round(G.c[0]*1000)/1000,Math.round(G.c[1]*1000)/1000]:null,lk:G.lk,lid:G.lid,fk:G.fk,end:G.end,ce:G.ce,fz:G.fz,rs:G.rs,mg:G.mg,spd:G.spd,md:G.minDur,
+  return {t:'s',ht:now,ph:G.ph,tg:G.tg,ch:G.ch,sp:[...G.spec],rk:G.rk,c:G.c?[Math.round(G.c[0]*1000)/1000,Math.round(G.c[1]*1000)/1000]:null,lk:G.lk,lid:G.lid,fk:G.fk,fks:G.fks,fn:G.fkNext,end:G.end,ce:G.ce,fz:G.fz,rs:G.rs,mg:G.mg,spd:G.spd,md:G.minDur,
     res:G.res,rt:G.readyEnd,av};
 }
 function applyMove(uid,m){
@@ -517,7 +521,11 @@ function cpuTick(dt,now){
     else if(ph==='call' || ph==='look'){
       const tgt=G.ch.length?chainSpot(0):TAG;
       const d=Math.hypot(tgt.x-p.x,tgt.z-p.z);
-      if(ph==='call' && G.c){
+      if(ph==='call' && now<G.fk){
+        if(s.fkSeen!==G.lid){ s.fkSeen=G.lid; s.react=rand(0.15,0.55); }
+        if(now-G.fks<s.react){ tx=tgt.x; tz=tgt.z; if(now>G.fks+GRACE){ p.ml=G.lid; p.mr='walk'; } }
+      }
+      else if(ph==='call' && G.c){
         const pr=G.c[0];   // 가사 게이지 진행률 (1이 되면 돌아봄)
         if(pr<s.risk){ tx=tgt.x+(G.ch.length?0:0.6); tz=tgt.z+0.4; run=d>5 && s.stam>0.3 && pr<s.risk-0.25; }
         if(d<1.25 && pr<0.75){ hostHandle(mb.uid,{t:'cut'}); return; }
@@ -547,8 +555,9 @@ function cpuTick(dt,now){
 function cpuTagger(mb,p,s,dt,now){
   if(G.ph==='call'){
     if(!G.c){ s.wait-=dt; if(s.wait<=0){ s.wait=rand(0.5,1.5); s.acc=false;
-      if(!G.fkUsed && Math.random()<0.12){ hostHandle(mb.uid,{t:'fake'}); }
+      if(Math.random()<0.25){ hostHandle(mb.uid,{t:'fake'}); }
       hostHandle(mb.uid,{t:'cs',v:rand(0,1)}); s.chg=Math.random()<0.5?rand(0.2,0.7):-1; } }
+    else if(Math.random()<dt*0.25 && G.c[0]<0.8){ hostHandle(mb.uid,{t:'fake'}); }   // 외치는 도중 가끔 페이크
     else if(s.chg>0 && G.c[0]>=s.chg){ s.chg=-1; hostHandle(mb.uid,{t:'sp',v:Math.random()<0.5?0:rand(0.6,1)}); }   // 중간에 속도 바꾸기
   } else if(G.ph==='look'){
     const t=now-G.lk;
@@ -604,7 +613,9 @@ function hostHandle(uid,m){
       G.c=[0, 1/durOf(G.spd)]; break; }
     case 'sp':        // 술래: 속도 조절선 (외치는 도중에도 바꿀 수 있음)
       if(uid!==G.tg || typeof m.v!=='number') return; G.spd=clamp(m.v,0,1); break;
-    case 'fake': if(uid===G.tg && G.ph==='call' && !G.fkUsed){ G.fkUsed=true; G.fk=now+0.8; hostEvent('fake',uid); } break;
+    case 'fake':      // 술래 페이크: 잠깐 돌아봄 → 이때 움직여도 잡힘 (횟수 제한 없음, 2.5초 간격)
+      if(uid===G.tg && G.ph==='call' && now>=G.fkNext && now>=G.fk){ G.lid++; G.fks=now; G.fk=now+FAKE_T; G.fkNext=now+FAKE_CD; G.acc.clear(); hostEvent('fake',uid); }
+      break;
     case 'turn': if(uid===G.tg && G.ph==='look' && now>G.lk+0.5){ G.ph='call'; G.c=null; } break;
     case 'acc': {     // 술래: "움직였음!" 지목
       if(uid!==G.tg || G.ph!=='look') return;
@@ -928,7 +939,7 @@ function onEvent(m){
     flash(u===myUid?`😱 들켰다! (${why})\n술래 손을 잡고 기다려요`:`🚨 ${nameOf(u)} 들켰다! (${why})`,2000); sfxCaught(); }
   else if(m.k==='miss'){ flash(S&&S.tg===myUid?'❌ 헛짚었어요!\n다음 외치기는 게이지 60% 이상':`😆 술래가 ${nameOf(m.x)}(을)를 헛짚었어요`,1700); sfxBuzz(); }
   else if(m.k==='cut'){ flash(`✂️ ${nameOf(m.x)} 손 끊기!\n${S&&S.tg===myUid?'1.5초 뒤 잡으러 출발!':'출발선까지 도망쳐요!'}`,1800); sfxCut(); }
-  else if(m.k==='fake'){ if(S&&S.tg!==myUid) sfxTurn(true); }
+  else if(m.k==='fake'){ if(S&&S.tg!==myUid){ sfxTurn(); if(role()==='runner') flash('🚨 멈춰!',800); } }
   else if(m.k==='trip'){ if(m.x!==myUid) sfxThud(0.4); }
   else if(m.k==='end'){ if(m.x==='runners') sfxWin(); else sfxWhistle(); }
 }
@@ -1049,8 +1060,8 @@ function renderRoom(){
   else h+= host ? `<button class="w sm mt" id="bStop" style="width:100%">게임 끝내고 대기실로</button>` : `<div class="sec" style="text-align:center">게임 진행 중</div>`;
   h+=`<div class="rules"><b>규칙</b><br>🎯 술래: <b>${IS_TOUCH?'외치기 버튼':'스페이스'}</b>로 "무궁화 꽃이 피었습니다" 시작 — 가사 글씨가 꽉 차면 돌아봐요. 조절선으로 빠르게(1.5초)~천천히(5초), 외치는 도중에도 바꿀 수 있어요<br>
     👀 술래가 돌아본 뒤 움직이면(달리다 휘청여도, 넘어져도) <b>자동으로 잡혀</b> 술래 옆에서 손을 잡아요<br>
-    ✂️ 남은 친구가 첫 번째 친구의 손을 끊으면 모두 도망! 술래는 1.5배 빠르게 쫓아요. 출발선을 넘으면 안전<br>
-    🪨 돌부리를 밟으면 누구든 넘어져요 · 🏃 뛰다 멈추면 몸이 휘청여서 들키기 쉬워요 · 🌳 큰 나무 뒤에선 안 보여요 · 👀 술래 페이크 1회</div>`;
+    ✂️ 남은 친구가 첫 번째 친구의 손을 끊으면 모두 도망! 술래는 2초 뒤 1.8배 빠르게 쫓아요. 출발선을 넘으면 안전<br>
+    🪨 돌부리를 밟으면 누구든 넘어져요 · 🏃 뛰다 멈추면 몸이 휘청여서 들키기 쉬워요 · 🌳 큰 나무 뒤에선 안 보여요 · 👀 술래 페이크는 무제한(2.5초 간격) — 페이크 때 움직여도 잡혀요</div>`;
   h+=`<button class="w sm mt" id="bCloseRoom" style="width:100%">닫기</button>`;
   $('room').innerHTML=h;
   $('room').querySelectorAll('[data-k]').forEach(b=>b.onclick=e=>{ e.stopPropagation(); const mb=memberByUid(+b.dataset.k);
@@ -1223,8 +1234,9 @@ function updateLocal(dt){
   }
   if(r==='chain'){ const sp=chainSpot(S.ch.indexOf(myUid)); local.x=sp.x; local.z=sp.z; local.ry=0; local.st=4; local.moving=false; return; }
   // 돌아본 순간: 방장 기준 시각 + 여유, 그리고 내 화면에 처음 보인 시각 + 반응 시간 중 늦은 쪽부터 판정
-  if(ph==='look' && local.seenLid!==S.lid){ local.seenLid=S.lid; local.seenAt=now; local.mvAcc=0; }
-  const lookNow = ph==='look' && r==='runner' && now>Math.max(S.lk+GRACE, (local.seenAt||0)+REACT);
+  const faking = ph==='call' && now<S.fk, watching = ph==='look' || faking;
+  if(watching && local.seenLid!==S.lid){ local.seenLid=S.lid; local.seenAt=now; local.mvAcc=0; }
+  const lookNow = watching && r==='runner' && now>Math.max((faking?S.fks:S.lk)+GRACE, (local.seenAt||0)+REACT);
   const mark = why=>{ if(lookNow && local.ml!==S.lid){ local.ml=S.lid; local.mr=why; } };
   if(local.fallT>0){ local.fallT-=dt; local.st=3; local.moving=false; mark('fall'); local.stam=Math.min(1,local.stam+dt*0.18); return; }
   const kx=(keys.ArrowRight||keys.KeyD?1:0)-(keys.ArrowLeft||keys.KeyA?1:0);
@@ -1617,10 +1629,10 @@ function hudFrame(hn,r){
   else if(r==='spec') hint='다음 판부터 참가해요 · 구경하며 채팅해 보세요';
   else if(r==='chain') hint='🤝 술래 손을 잡고 기다리는 중 · 다가오는 친구들이 손을 끊어주길!';
   else if(r==='tagger'){
-    if(ph==='call' && !S.c) hint = (T?'🌸 외치기 시작 · 아래 조절선으로 빠르게/천천히':'스페이스 외치기 시작 · ←→(또는 끌기) 빠르게/천천히 · F 페이크(1회)')+(S.md>DUR_FAST?' · 헛짚어서 이번엔 천천히만':'');
+    if(ph==='call' && !S.c) hint = (T?'🌸 외치기 시작 · 아래 조절선으로 빠르게/천천히':'스페이스 외치기 시작 · ←→(또는 끌기) 빠르게/천천히 · F 페이크(무제한, 2.5초 간격)')+(S.md>DUR_FAST?' · 헛짚어서 이번엔 천천히만':'');
     else if(ph==='call') hint='무궁화 꽃이 피었습니다~ 글씨가 꽉 차면 돌아봐요 (도중에 속도 조절 가능)';
     else if(ph==='look') hint = T?'👀 움직인 친구는 자동으로 잡혀요 · 좌우로 끌면 시야 회전 · 🌳 돌아서기':'👀 움직인 친구는 자동으로 잡혀요 · ←→ 시야 · 스페이스 돌아서기';
-    else if(ph==='chase') hint='잡아라! 1.5배 빠르게 쫓아가요';
+    else if(ph==='chase') hint='잡아라! 1.8배 빠르게 쫓아가요';
   } else if(r==='runner'){
     if(ph==='call' && S.c && (chantFrame.p||0)>0.8) hint='⚠️ 곧 돌아봐요! 지금 멈추세요 (뛰고 있었다면 더 일찍!)';
     else if(ph==='call') hint = canCut() ? (T?'✂️ 지금 손 끊기!':'✂️ E 를 눌러 손 끊기!') : (S.ch.length?'첫 번째 친구 손을 끊으러 가요':'술래 등을 치러 가요')+(T?' · 🏃 달리기':' · Shift 달리기');
@@ -1643,6 +1655,7 @@ function hudFrame(hn,r){
     const tg=r==='tagger', lookT=tg&&ph==='look';
     setUI($('bChant'),'display',tg&&ph==='call'&&!S.c?'block':'none');
     setUI($('bFake'),'display',tg&&ph==='call'?'block':'none');
+    { const left=S? (S.fn||0)-hn : 0; setUI($('bFake'),'opacity', left>0?'0.45':'1'); setUI($('bFake'),'html', left>0?`👀<br>${left.toFixed(1)}초`:'👀<br>페이크'); }
     setUI($('bAcc'),'display','none'); setUI($('bTurn'),'display',lookT?'block':'none');
     setUI($('bRun'),'display',(r==='runner'||ph==='lobby'||r==='spec')?'block':'none');
     setUI($('bCut'),'display',r==='runner'&&canCut()?'block':'none');
