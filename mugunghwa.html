@@ -86,13 +86,13 @@
   #stam i{display:block;height:100%;background:#46b86a}
   body.touch #stam{left:calc(30px + env(safe-area-inset-left));transform:none;bottom:calc(168px + env(safe-area-inset-bottom));width:110px}
   /* 외치기 게이지 */
-  #gauge{position:absolute;left:50%;bottom:calc(52px + env(safe-area-inset-bottom));transform:translateX(-50%);width:300px;height:26px;border:3px solid #4a2f22;border-radius:13px;
-    background:linear-gradient(90deg,#ff8a5c,#ffd23f 50%,#8fd16a);overflow:hidden;display:none;box-shadow:0 3px 0 #4a2f22}
-  #gauge .cover{position:absolute;top:0;right:0;bottom:0;background:rgba(255,255,255,.82)}
-  #gauge .mn{position:absolute;top:0;bottom:0;width:3px;background:#c0392b}
+  #gauge{position:absolute;left:50%;bottom:calc(52px + env(safe-area-inset-bottom));transform:translateX(-50%);width:340px;height:30px;border:3px solid #4a2f22;border-radius:13px;
+    background:linear-gradient(90deg,#ff8a5c,#ffd23f 50%,#8fd16a);display:none;box-shadow:0 3px 0 #4a2f22;pointer-events:auto;touch-action:none;cursor:ew-resize}
+  #gauge .cover{position:absolute;top:0;left:0;bottom:0;background:repeating-linear-gradient(45deg,rgba(80,60,50,.45) 0 6px,rgba(80,60,50,.2) 6px 12px)}
+  #gauge .mn{position:absolute;top:-4px;bottom:-4px;width:8px;margin-left:-4px;background:#e2504f;border:2px solid #4a2f22;border-radius:4px}
   #gauge .lbl{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:11.5px;font-weight:900;color:#4a2f22}
   #gauge.on{display:block}
-  body.touch #gauge{bottom:auto;top:calc(130px + env(safe-area-inset-top));width:min(300px,80vw)}
+  body.touch #gauge{bottom:calc(146px + env(safe-area-inset-bottom));width:min(320px,86vw);height:36px}
   /* 채팅 */
   #chatLog{position:absolute;left:8px;bottom:calc(250px + env(safe-area-inset-bottom));width:min(330px,62vw);display:flex;flex-direction:column;gap:3px}
   body:not(.touch) #chatLog{bottom:calc(90px + env(safe-area-inset-bottom))}
@@ -165,7 +165,7 @@
   <div id="joy"><div id="joyK"></div></div>
   <button id="bRun" class="tbtn g">🏃<br>달리기</button>
   <button id="bCut" class="tbtn r">✂️<br>손 끊기</button>
-  <button id="bChant" class="tbtn y">🌸<br>누르는 동안<br>외치기</button>
+  <button id="bChant" class="tbtn y">🌸<br>외치기<br>시작</button>
   <button id="bFake" class="tbtn w">👀<br>페이크</button>
   <button id="bAcc" class="tbtn r">🚨<br>움직였음!</button>
   <button id="bTurn" class="tbtn w">🌳<br>돌아서기</button>
@@ -194,7 +194,7 @@
   <div id="netInfo"></div>
   <div id="connBanner"></div>
   <div id="stam"><i id="stamI"></i></div>
-  <div id="gauge"><div class="cover" id="gCover"></div><div class="mn" id="gMin"></div><div class="lbl" id="gLbl">외치기</div></div>
+  <div id="gauge"><div class="cover" id="gCover"></div><div class="mn" id="gMin"></div><div class="lbl" id="gLbl">속도</div></div>
   <div id="chatLog"></div>
   <div id="chatBar" class="pe"><input id="chatIn" maxlength="60" placeholder="메시지 입력 (Enter)" enterkeyhint="send"><button class="sm" id="chatSend">보내기</button></div>
   <div id="help"></div>
@@ -218,7 +218,7 @@
     <div class="row"><input id="inCode" maxlength="4" placeholder="ABCD" autocomplete="off" autocapitalize="characters" style="text-transform:uppercase;letter-spacing:4px"><button id="bJoin" style="flex:.55">입장</button></div>
     <button class="w mt" id="bPractice" style="width:100%">혼자 연습하기 (CPU 친구들과)</button>
     <div id="status"></div>
-    <div class="tip">PC: 방향키 이동 · Shift 달리기 · E 손 끊기 · 술래는 스페이스 누르는 동안 외치기<br>모바일: 조이스틱 이동 · 버튼으로 달리기/손 끊기/외치기(누르는 동안)</div>
+    <div class="tip">PC: 방향키 이동 · Shift 달리기 · E 손 끊기 · 술래는 스페이스 외치기 · ←→ 속도<br>모바일: 조이스틱 이동 · 버튼으로 달리기/손 끊기/외치기 · 조절선으로 속도</div>
   </div>
 </div>
 
@@ -230,7 +230,7 @@
    - 연결: Cloudflare 중계 서버(기본) → 실패하면 기기끼리 직접 연결(PeerJS)
    - 음성: 마이크를 켠 사람이 다른 모두에게 직접 전송
    ========================================================================== */
-const VERSION = '1.3';
+const VERSION = '1.5';
 const GAME = 'mgh';
 const $ = id => document.getElementById(id);
 const clamp = (v,a,b) => Math.max(a,Math.min(b,v));
@@ -251,7 +251,8 @@ const FIELD = {x:9.5, zMin:0.9, zMax:32.5};
 const HIDE = [{x:-5.8,z:11},{x:5.8,z:7.5},{x:6.3,z:18.5},{x:-6.4,z:22.5}];   // 숨을 수 있는 나무
 const SPD = {walk:1.8, run:3.0};
 const TAG_SPD = SPD.run*1.5;         // 추격 때 술래 속도 = 참가자 달리기의 1.5배
-const CHANT_FULL = 4.0;              // 외치기 게이지가 가득 차는 시간(초) = 가장 천천히 외칠 때
+const DUR_FAST = 1.5, DUR_SLOW = 5.0; // 외치기 속도 범위(초): 조절선 왼쪽=빠르게, 오른쪽=천천히
+const DUR_PEN = 2.6;                  // 헛짚은 다음 외치기는 이보다 빠르게 못 읽음
 const MIN_G = 0.4, MIN_G_PEN = 0.6;  // 최소 게이지, 헛짚은 뒤 최소 게이지
 const GRACE = 0.25;                  // 돌아본 직후 멈출 여유(초)
 const LOOK_MAX = 8, CHASE_T = 10, FREEZE_T = 2, READY_T = 3, RESULT_T = 4.5;
@@ -354,7 +355,8 @@ const nowS=()=>performance.now()/1000;
 let G = null;
 const pos = new Map();          // uid -> {x,z,ry,st,ml}
 const cpuS = new Map();
-function newSim(){ return {ph:'lobby',tg:0,ch:[],spec:new Set(),rk:[],c:null,lk:0,lid:0,fk:0,fkUsed:false,end:0,ce:0,fz:0,rs:0,mg:MIN_G,acc:new Set(),
+const durOf = v => Math.max(G.minDur||DUR_FAST, lerp(DUR_FAST,DUR_SLOW,clamp(v,0,1)));
+function newSim(){ return {spd:0.5,minDur:DUR_FAST,ph:'lobby',tg:0,ch:[],spec:new Set(),rk:[],c:null,lk:0,lid:0,fk:0,fkUsed:false,end:0,ce:0,fz:0,rs:0,mg:MIN_G,acc:new Set(),
   res:null,resEnd:0,readyEnd:0,rid:0,cpuSeq:1000,safe:new Set()}; }
 const isTaggerPh = ph => ph==='ready'||ph==='call'||ph==='look';
 function runners(){ return members.filter(m=>m.uid!==G.tg && !G.spec.has(m.uid)).map(m=>m.uid); }
@@ -401,7 +403,7 @@ function startGame(){
 }
 function startRound(tg){
   const now=nowS();
-  G.tg=tg; G.ch=[]; G.spec.clear(); G.c=null; G.fk=0; G.fkUsed=false; G.mg=MIN_G; G.acc.clear(); G.safe.clear(); G.res=null; G.rid++;
+  G.tg=tg; G.ch=[]; G.spec.clear(); G.c=null; G.spd=0.5; G.minDur=DUR_FAST; G.fk=0; G.fkUsed=false; G.mg=MIN_G; G.acc.clear(); G.safe.clear(); G.res=null; G.rid++;
   G.rk=makeRocks(settings.rocks); G.ph='ready'; G.readyEnd=now+READY_T; G.end=now+READY_T+settings.time*60; G.rs++;
   const rs=runners();
   rs.forEach((u,i)=>{ const x=-7.5+15*(i+0.5)/rs.length; pos.set(u,{x:r2(x),z:START_Z+0.7,ry:Math.PI,st:0,ml:0}); });
@@ -435,7 +437,8 @@ function hostTick(dt){
   switch(G.ph){
     case 'ready': if(now>=G.readyEnd){ G.ph='call'; G.c=null; } break;
     case 'call':
-      if(G.c && now>=G.c[1]){ G.ph='look'; G.lk=now; G.lid++; G.acc.clear(); G.c=null; }
+      if(G.c){ G.c[1]=1/durOf(G.spd); G.c[0]+=dt*G.c[1];                       // 가사 게이지 진행 (모두에게 같은 값)
+        if(G.c[0]>=1){ G.ph='look'; G.lk=now; G.lid++; G.acc.clear(); G.c=null; G.minDur=DUR_FAST; } }   // 글씨가 꽉 차야 돌아봄
       else if(now>G.end) endRound('tagger',`⏰ 시간 끝!\n${nameOf(G.tg)} 술래 승리`, G.ch[0]);
       break;
     case 'look': if(now>G.lk+LOOK_MAX) G.ph='call'; break;
@@ -465,7 +468,7 @@ function snapshot(){
   members.forEach(m=>{ const p=pos.get(m.uid); if(!p) return; const f=forcedPos(m.uid,now);
     const q=f||p; let st=f?f.st:p.st; if(G.ph==='chase' && G.safe.has(m.uid)) st=7;
     av.push([m.uid,r2(q.x),r2(q.z),r2(q.ry),st]); });
-  return {t:'s',ht:now,ph:G.ph,tg:G.tg,ch:G.ch,sp:[...G.spec],rk:G.rk,c:G.c,lk:G.lk,lid:G.lid,fk:G.fk,end:G.end,ce:G.ce,fz:G.fz,rs:G.rs,mg:G.mg,
+  return {t:'s',ht:now,ph:G.ph,tg:G.tg,ch:G.ch,sp:[...G.spec],rk:G.rk,c:G.c?[Math.round(G.c[0]*1000)/1000,Math.round(G.c[1]*1000)/1000]:null,lk:G.lk,lid:G.lid,fk:G.fk,end:G.end,ce:G.ce,fz:G.fz,rs:G.rs,mg:G.mg,spd:G.spd,md:G.minDur,
     res:G.res,rt:G.readyEnd,av};
 }
 function applyMove(uid,m){
@@ -504,7 +507,7 @@ function cpuTick(dt,now){
       const tgt=G.ch.length?chainSpot(0):TAG;
       const d=Math.hypot(tgt.x-p.x,tgt.z-p.z);
       if(ph==='call' && G.c){
-        const pr=(now-G.c[0])/CHANT_FULL/0.55;   // 최소 40%~최대 100% 사이에 돌아보므로 대략 그 사이에서 멈춤
+        const pr=G.c[0];   // 가사 게이지 진행률 (1이 되면 돌아봄)
         if(pr<s.risk){ tx=tgt.x+(G.ch.length?0:0.6); tz=tgt.z+0.4; run=d>5 && s.stam>0.3 && pr<s.risk-0.25; }
         if(d<1.25 && pr<0.75){ hostHandle(mb.uid,{t:'cut'}); return; }
       }
@@ -534,8 +537,8 @@ function cpuTagger(mb,p,s,dt,now){
   if(G.ph==='call'){
     if(!G.c){ s.wait-=dt; if(s.wait<=0){ s.wait=rand(0.5,1.5); s.acc=false;
       if(!G.fkUsed && Math.random()<0.12){ hostHandle(mb.uid,{t:'fake'}); }
-      hostHandle(mb.uid,{t:'cs'}); s.hold=rand(G.mg,1.05)*CHANT_FULL; } }
-    else if(s.hold>0 && now-G.c[0]>=s.hold){ s.hold=0; hostHandle(mb.uid,{t:'cr'}); }
+      hostHandle(mb.uid,{t:'cs',v:rand(0,1)}); s.chg=Math.random()<0.5?rand(0.2,0.7):-1; } }
+    else if(s.chg>0 && G.c[0]>=s.chg){ s.chg=-1; hostHandle(mb.uid,{t:'sp',v:Math.random()<0.5?0:rand(0.6,1)}); }   // 중간에 속도 바꾸기
   } else if(G.ph==='look'){
     const t=now-G.lk;
     if(t>0.9 && !s.acc){ s.acc=true;
@@ -587,12 +590,12 @@ function hostHandle(uid,m){
     case 'kick': if(uid===myUid) kickMember(+m.u); break;
     case 'unban': if(uid===myUid){ banned.tokens.clear(); banned.devs.clear(); pushRoster(); hostEvent('toast','내보낸 사람 입장 제한을 풀었어요'); } break;
     // ----- 게임 -----
-    case 'cs': {      // 술래: 누르는 순간 외치기 시작 (게이지가 다 차면 자동으로 돌아봄)
+    case 'cs': {      // 술래: 외치기 시작 → 가사 글씨가 꽉 차면 돌아봄
       if(uid!==G.tg || G.ph!=='call' || G.c) return;
-      G.c=[now, now+CHANT_FULL, G.mg]; break; }
-    case 'cr': {      // 술래: 떼는 순간 바로 돌아봄 (최소 게이지 전이면 최소치에서 돌아봄)
-      if(uid!==G.tg || G.ph!=='call' || !G.c) return;
-      G.c[1]=Math.max(now, G.c[0]+G.c[2]*CHANT_FULL); G.mg=MIN_G; break; }
+      if(typeof m.v==='number') G.spd=clamp(m.v,0,1);
+      G.c=[0, 1/durOf(G.spd)]; break; }
+    case 'sp':        // 술래: 속도 조절선 (외치는 도중에도 바꿀 수 있음)
+      if(uid!==G.tg || typeof m.v!=='number') return; G.spd=clamp(m.v,0,1); break;
     case 'fake': if(uid===G.tg && G.ph==='call' && !G.fkUsed){ G.fkUsed=true; G.fk=now+0.8; hostEvent('fake',uid); } break;
     case 'turn': if(uid===G.tg && G.ph==='look' && now>G.lk+0.5){ G.ph='call'; G.c=null; } break;
     case 'acc': {     // 술래: "움직였음!" 지목
@@ -602,7 +605,7 @@ function hostHandle(uid,m){
       if(hiddenAt(q.x,q.z)){ sendTo(uid,{t:'ev',k:'toast',x:'나무 뒤라서 보이지 않아요'}); return; }
       G.acc.add(t);
       if(q.ml===G.lid) catchRunner(t);
-      else { G.mg=MIN_G_PEN; hostEvent('miss',t); }
+      else { G.minDur=DUR_PEN; hostEvent('miss',t); }
       break; }
     case 'cut': {     // 참가자: 손 끊기 (아무도 안 잡혔으면 술래 등 치기)
       if(G.ph!=='call' && G.ph!=='look') return;
@@ -1035,8 +1038,8 @@ function renderRoom(){
       <div><label>🪨 돌부리 개수</label><select id="sRock" ${dis}>${ROCK_OPTS.map(v=>`<option value="${v}" ${(settings.rocks??30)===v?'selected':''}>${v?v+'개':'없음'}${v===30?' (기본)':''}</option>`).join('')}</select></div></div>`;
   if(lobby) h+= host ? `<button class="y mt" id="bStart" style="width:100%">🌸 게임 시작</button>` : `<div class="sec" style="text-align:center">방장이 시작하길 기다리는 중...<br>그동안 돌아다니며 채팅해 보세요!</div>`;
   else h+= host ? `<button class="w sm mt" id="bStop" style="width:100%">게임 끝내고 대기실로</button>` : `<div class="sec" style="text-align:center">게임 진행 중</div>`;
-  h+=`<div class="rules"><b>규칙</b><br>🎯 술래: 나무를 보고 <b>${IS_TOUCH?'외치기 버튼':'스페이스'}</b>를 누르는 동안 "무궁화 꽃이 피었습니다" — 떼는 순간 바로 돌아봐요 (최소 40%, 게이지가 다 차면 자동)<br>
-    👀 돌아본 뒤 움직인 친구를 골라 <b>움직였음!</b> → 맞으면 술래 옆에서 손을 잡아요 (틀리면 다음 외치기 최소 60%)<br>
+  h+=`<div class="rules"><b>규칙</b><br>🎯 술래: <b>${IS_TOUCH?'외치기 버튼':'스페이스'}</b>로 "무궁화 꽃이 피었습니다" 시작 — 가사 글씨가 꽉 차면 돌아봐요. 조절선으로 빠르게(1.5초)~천천히(5초), 외치는 도중에도 바꿀 수 있어요<br>
+    👀 돌아본 뒤 움직인 친구를 골라 <b>움직였음!</b> → 맞으면 술래 옆에서 손을 잡아요 (틀리면 다음 외치기는 2.6초보다 빠르게 못 읽어요)<br>
     ✂️ 남은 친구가 첫 번째 친구의 손을 끊으면 모두 도망! 술래는 1.5배 빠르게 쫓아요. 출발선을 넘으면 안전<br>
     🪨 돌부리를 밟으면 누구든 넘어져요 · 🏃 뛰다 멈추면 몸이 휘청여서 들키기 쉬워요 · 🌳 큰 나무 뒤에선 안 보여요 · 👀 술래 페이크 1회</div>`;
   h+=`<button class="w sm mt" id="bCloseRoom" style="width:100%">닫기</button>`;
@@ -1108,19 +1111,20 @@ function backHome(t){ resetAll(true); setStatus(t||''); }
    7. 조작 (키보드 · 터치) 과 내 캐릭터
    ========================================================================== */
 const keys={};
-const local={x:0,z:START_Z-1,vx:0,vz:0,swayT:0,slid:false,ry:Math.PI,st:0,fallT:0,ml:0,stam:1,tired:false,charging:false,chargeAt:0,g:0,camYaw:Math.PI,moving:false,tripRock:-1};
+const local={spd:0.5,x:0,z:START_Z-1,vx:0,vz:0,swayT:0,slid:false,ry:Math.PI,st:0,fallT:0,ml:0,stam:1,tired:false,charging:false,chargeAt:0,g:0,camYaw:Math.PI,moving:false,tripRock:-1};
 let lookSel=0, tagYaw=0, runHeld=false;
 const joy={x:0,y:0,id:null};
 // 술래: 누르고 있는 동안 "무궁화 꽃이 피었습니다"를 외침 → 떼는 순간(또는 게이지가 다 차면) 바로 돌아봄
+// 술래: 시작하면 가사 글씨가 꽉 찰 때까지 외침 (중간에 멈출 수 없음) · 속도는 조절선으로
 function chargeStart(){
-  if(role()!=='tagger' || S.ph!=='call' || S.c || local.charging) return;
-  local.charging=true; sendToHost({t:'cs'});
+  if(role()!=='tagger' || !S || S.ph!=='call' || S.c) return;
+  sendToHost({t:'cs',v:r2(local.spd)});
 }
-function chargeRelease(){
-  if(!local.charging) return; local.charging=false;
-  if(!S || S.ph!=='call') return;
-  sendToHost({t:'cr'});
-}
+function chargeRelease(){}
+let spdSentAt=0, spdSent=-1;
+function setSpd(v){ local.spd=clamp(v,0,1); const now=performance.now();
+  if(Math.abs(local.spd-spdSent)>0.004 && now-spdSentAt>90){ spdSentAt=now; spdSent=local.spd; sendToHost({t:'sp',v:Math.round(local.spd*1000)/1000}); } }
+setInterval(()=>{ if(role()==='tagger' && S && S.ph==='call' && Math.abs(local.spd-(S.spd??local.spd))>0.004) setSpd(local.spd), spdSentAt=0; },300);
 function doFake(){ if(role()==='tagger' && S.ph==='call'){ sendToHost({t:'fake'}); } }
 function doAccuse(){ if(role()==='tagger' && S.ph==='look'){ if(!lookSel){ flash('먼저 움직인 친구를 눌러 고르세요',1200); return; } sendToHost({t:'acc',u:lookSel}); lookSel=0; } }
 function doTurn(){ if(role()==='tagger' && S.ph==='look') sendToHost({t:'turn'}); }
@@ -1148,7 +1152,13 @@ function bindHold(el,on,off){
   el.addEventListener('pointerup',up); el.addEventListener('pointercancel',up);
 }
 bindHold($('bRun'),()=>runHeld=true,()=>runHeld=false);
-bindHold($('bChant'),chargeStart,chargeRelease);
+bindHold($('bChant'),chargeStart,()=>{});
+// 속도 조절선 끌기
+(function(){ const g=$('gauge'); let on=false;
+  const mv=e=>{ const r=g.getBoundingClientRect(); setSpd((e.clientX-r.left)/r.width); };
+  g.addEventListener('pointerdown',e=>{ e.preventDefault(); e.stopPropagation(); on=true; try{g.setPointerCapture(e.pointerId);}catch(_){} mv(e); });
+  g.addEventListener('pointermove',e=>{ if(on) mv(e); });
+  const up=()=>{ on=false; spdSentAt=0; setSpd(local.spd); }; g.addEventListener('pointerup',up); g.addEventListener('pointercancel',up); })();
 bindHold($('bFake'),doFake,()=>{});
 bindHold($('bAcc'),doAccuse,()=>{});
 bindHold($('bTurn'),doTurn,()=>{});
@@ -1199,6 +1209,7 @@ function updateLocal(dt){
   if(r==='tagger' && (ph==='ready'||ph==='call'||ph==='look'||(ph==='chase'&&now<S.fz)||ph==='result')){
     if(ph!=='result' || !S.res || (S.res.k!=='caught' && S.res.k!=='runners')){ local.x=TAG.x; local.z=TAG.z; local.ry=ph==='look'||ph==='chase'?0:Math.PI; local.st=ph==='look'?6:5; local.moving=false;
       if(ph==='look'){ const kx=(keys.ArrowRight||keys.KeyD?1:0)-(keys.ArrowLeft||keys.KeyA?1:0); tagYaw=clamp(tagYaw-kx*dt*1.5,-1.15,1.15); }
+      if(ph==='call'){ const kx=(keys.ArrowRight||keys.KeyD?1:0)-(keys.ArrowLeft||keys.KeyA?1:0); if(kx) setSpd(local.spd+kx*dt*0.7); }   // ←빠르게 →천천히
       return; }
   }
   if(r==='chain'){ const sp=chainSpot(S.ch.indexOf(myUid)); local.x=sp.x; local.z=sp.z; local.ry=0; local.st=4; local.moving=false; return; }
@@ -1412,9 +1423,9 @@ function cameraTarget(t,dt){
   else if(r==='tagger' && ph!=='chase' && ph!=='lobby') want=0;
   else if(local.moving) want=local.ry;
   else if(ph==='chase') want=0;
-  if(r==='chain') want=Math.PI;
-  if(want!==null){ let df=want-local.camYaw; df=Math.atan2(Math.sin(df),Math.cos(df)); local.camYaw+=df*Math.min(1,dt*(want===Math.PI?3:1.6)); }
-  const fx=Math.sin(local.camYaw), fz=Math.cos(local.camYaw), dist=portrait?5.6:4.8, up=portrait?3.4:2.7;
+  if(r==='chain') want=0;   // 손잡고 기다리는 친구: 술래 옆에서 들판 쪽(다가오는 친구들)을 바라봄
+  if(want!==null){ let df=want-local.camYaw; df=Math.atan2(Math.sin(df),Math.cos(df)); local.camYaw+=df*Math.min(1,dt*(want===Math.PI||r==='chain'?3:1.6)); }
+  const fx=Math.sin(local.camYaw), fz=Math.cos(local.camYaw), dist=r==='chain'?(portrait?4.6:4.0):portrait?5.6:4.8, up=r==='chain'?(portrait?3.6:3.0):portrait?3.4:2.7;
   return [new THREE.Vector3(local.x-fx*dist,up,local.z-fz*dist),new THREE.Vector3(local.x+fx*4,0.7,local.z+fz*4)];
 }
 let lastT=performance.now(), chantPlayed=-1, beatNext=0;
@@ -1514,7 +1525,8 @@ function setTv(on){
 function chantFrame(hn,r){
   const bt=$('beats');
   let p=-1;
-  if(S && S.ph==='call' && S.c) p=Math.min(0.999,(hn-S.c[0])/CHANT_FULL);
+  if(S && S.ph==='call' && S.c){ const raw=Math.min(0.999,S.c[0]+S.c[1]*Math.max(0,hn-S.ht)); chantFrame.p=Math.max(chantFrame.p||0,raw); p=chantFrame.p; }
+  else chantFrame.p=0;
   // 술래는 외치기 전부터 흐린 가사가 보이고, 누르는 순간부터 글자에 색이 차오름
   const showAll = p>=0 || (S && S.ph==='look' && hn<S.lk+0.8) || (r==='tagger' && S && S.ph==='call');
   if(S && S.ph==='look') p=1;
@@ -1525,11 +1537,7 @@ function chantFrame(hn,r){
     const f=[clamp(q/0.3,0,1),clamp((q-0.3)/0.2,0,1),clamp((q-0.5)/0.5,0,1)];
     f.forEach((v,i)=>setUI($('bf'+(i+1)),'clipPath',`inset(0 ${(100-v*100).toFixed(1)}% 0 0)`));
     // 최소 게이지 위치 표시 (술래만)
-    const mg=S.c?S.c[2]:S.mg, mk=$('bMark');
-    if(r==='tagger' && S.ph==='call'){
-      const li=mg<=0.3?1:mg<=0.5?2:3, fr=li===1?mg/0.3:li===2?(mg-0.3)/0.2:(mg-0.5)/0.5;
-      const ln=$('bl'+li); setUI(mk,'display','block'); setUI(mk,'left',(ln.offsetLeft-ln.offsetWidth/2+ln.offsetWidth*fr)+'px'); setUI(mk,'top',(ln.offsetTop+ln.offsetHeight-6)+'px');
-    } else setUI(mk,'display','none');
+    setUI($('bMark'),'display','none');
     if(S.ph==='call' && p>=0){ for(let i=0;i<CHANT_AT.length;i++){ if(p>=CHANT_AT[i] && chantPlayed<i){ chantPlayed=i; sfxSyl(i); } } }
   } else chantPlayed=-1;
   // 참가자: 심장 소리 + 붉은 테두리
@@ -1576,10 +1584,10 @@ function hudFrame(hn,r){
   const T=IS_TOUCH;
   if(ph==='lobby') hint = T ? '조이스틱으로 돌아다니며 친구를 기다려요' : '';
   else if(r==='spec') hint='다음 판부터 참가해요 · 구경하며 채팅해 보세요';
-  else if(r==='chain') hint='🤝 술래 손을 잡고 기다리는 중 · 친구가 손을 끊어주길!';
+  else if(r==='chain') hint='🤝 술래 손을 잡고 기다리는 중 · 다가오는 친구들이 손을 끊어주길!';
   else if(r==='tagger'){
-    if(ph==='call' && !S.c) hint = (T?'🌸 버튼을 누르는 동안 외치기':'스페이스를 누르는 동안 외치기')+` · 떼면 바로 돌아봄 · 최소 ${Math.round(S.mg*100)}%`+(T?'':' · F 페이크(1회)');
-    else if(ph==='call') hint='무궁화 꽃이 피었습니다~ (떼면 바로 돌아봐요)';
+    if(ph==='call' && !S.c) hint = (T?'🌸 외치기 시작 · 아래 조절선으로 빠르게/천천히':'스페이스 외치기 시작 · ←→(또는 끌기) 빠르게/천천히 · F 페이크(1회)')+(S.md>DUR_FAST?' · 헛짚어서 이번엔 천천히만':'');
+    else if(ph==='call') hint='무궁화 꽃이 피었습니다~ 글씨가 꽉 차면 돌아봐요 (도중에 속도 조절 가능)';
     else if(ph==='look') hint = lookSel ? `👉 ${nameOf(lookSel)} 선택됨 · ${T?'🚨 움직였음!':'E 움직였음!'}` : (T?'움직인 친구를 눌러 고르세요 · 좌우로 끌면 시야 회전':'움직인 친구를 클릭 (Tab 순서대로) · E 움직였음! · ←→ 시야 · 스페이스 돌아서기');
     else if(ph==='chase') hint='잡아라! 1.5배 빠르게 쫓아가요';
   } else if(r==='runner'){
@@ -1589,18 +1597,19 @@ function hudFrame(hn,r){
   }
   setUI($('hint'),'display',hint?'block':'none'); setUI($('hint'),'text',hint);
   // 게이지
-  const gg=$('gauge'), showG=false;   // 가사 자체가 게이지
+  const gg=$('gauge'), showG=r==='tagger' && ph==='call';   // 술래: 속도 조절선
   setUI(gg,'display',showG?'block':'none');
-  if(showG){ const mg=S.c?S.c[2]:S.mg, v=S.c?clamp((hn-S.c[0])/CHANT_FULL,0,1):0;
-    setUI($('gCover'),'width',(100-v*100)+'%'); setUI($('gMin'),'left',(mg*100)+'%');
-    setUI($('gLbl'),'text', !S.c?'누르면 외치기 시작': v<mg?`최소 ${Math.round(mg*100)}%까지 외쳐요`:'떼면 바로 돌아봐요! (다 차면 자동)'); }
+  if(showG){ const v=local.spd, md=S.md||DUR_FAST, lockW=clamp((md-DUR_FAST)/(DUR_SLOW-DUR_FAST),0,1);
+    const dur=Math.max(md,lerp(DUR_FAST,DUR_SLOW,v));
+    setUI($('gMin'),'left',(v*100)+'%'); setUI($('gCover'),'width',(lockW*100)+'%');
+    setUI($('gLbl'),'text',`빠르게 ◀  ${dur.toFixed(1)}초  ▶ 천천히`); }
   // 체력
   const showS = (r==='runner'||ph==='lobby') && ph!=='result';
   setUI($('stam'),'display',showS && local.stam<0.999?'block':'none'); setUI($('stamI'),'width',Math.round(local.stam*100)+'%'); setUI($('stamI'),'background',local.tired?'#ee5a5a':'#46b86a');
   // 모바일 버튼
   if(IS_TOUCH){
     const tg=r==='tagger', lookT=tg&&ph==='look';
-    setUI($('bChant'),'display',tg&&ph==='call'?'block':'none');
+    setUI($('bChant'),'display',tg&&ph==='call'&&!S.c?'block':'none');
     setUI($('bFake'),'display',tg&&ph==='call'?'block':'none');
     setUI($('bAcc'),'display',lookT?'block':'none'); setUI($('bTurn'),'display',lookT?'block':'none');
     setUI($('bRun'),'display',(r==='runner'||ph==='lobby'||r==='spec')?'block':'none');
@@ -1608,7 +1617,7 @@ function hudFrame(hn,r){
     const joyOff = (tg && ph!=='chase' && ph!=='result') || r==='chain' || ph==='ready';
     $('touch').classList.toggle('joyoff',joyOff);
   }
-  setUI($('help'),'text', r==='tagger' ? '스페이스 누르는 동안 외치기(떼면 돌아봄) · F 페이크 · 클릭/Tab 선택 · E 움직였음 · 스페이스 돌아서기 · Enter 채팅'
+  setUI($('help'),'text', r==='tagger' ? '스페이스 외치기 · ←→ 속도 · F 페이크 · 클릭/Tab 선택 · E 움직였음 · 스페이스 돌아서기 · Enter 채팅'
                                       : '방향키 이동 · Shift 달리기 · E 손 끊기 · Enter 채팅');
 }
 requestAnimationFrame(frame);
