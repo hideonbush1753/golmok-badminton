@@ -230,7 +230,7 @@
    - 연결: Cloudflare 중계 서버(기본) → 실패하면 기기끼리 직접 연결(PeerJS)
    - 음성: 마이크를 켠 사람이 다른 모두에게 직접 전송
    ========================================================================== */
-const VERSION = '1.6';
+const VERSION = '1.7';
 const GAME = 'mgh';
 const $ = id => document.getElementById(id);
 const clamp = (v,a,b) => Math.max(a,Math.min(b,v));
@@ -406,6 +406,7 @@ function startRound(tg){
   G.tg=tg; G.ch=[]; G.spec.clear(); G.c=null; G.spd=0.5; G.minDur=DUR_FAST; G.fk=0; G.fkUsed=false; G.mg=MIN_G; G.acc.clear(); G.safe.clear(); G.res=null; G.rid++;
   G.rk=makeRocks(settings.rocks); G.ph='ready'; G.readyEnd=now+READY_T; G.end=now+READY_T+settings.time*60; G.rs++;
   const rs=runners();
+  for(let i=rs.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [rs[i],rs[j]]=[rs[j],rs[i]]; }   // 판마다 출발 자리 무작위
   rs.forEach((u,i)=>{ const x=-7.5+15*(i+0.5)/rs.length; pos.set(u,{x:r2(x),z:START_Z+0.7,ry:Math.PI,st:0,ml:0}); });
   pos.set(tg,{x:TAG.x,z:TAG.z,ry:Math.PI,st:5,ml:0});
   cpuS.clear();
