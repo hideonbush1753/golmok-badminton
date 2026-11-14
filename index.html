@@ -252,7 +252,7 @@
    - 참가자는 PeerJS(브라우저끼리 직접 연결)로 방장에게 접속
    - 음성은 마이크를 켠 사람이 다른 모두에게 직접 전송(메시 방식)
    ========================================================================== */
-const VERSION = '3.3';
+const VERSION = '3.4';
 const $ = id => document.getElementById(id);
 const clamp = (v,a,b) => Math.max(a,Math.min(b,v));
 const rand = (a,b) => a+Math.random()*(b-a);
@@ -263,7 +263,7 @@ const qs = new URLSearchParams(location.search);
 /* ---------------- 설정값 (필요하면 여기만 수정) ---------------- */
 const PREFIX = 'golmok-badminton-';  // 방 코드 앞에 붙는 고유 이름
 const SHARE_URL = '';                // 초대 링크 주소. 비우면 현재 주소 사용
-const CLUB_CHECK = '37662605782bc1667d7b452e3a60f26180155f485d038330199e2a0c5a3ac985';
+const CLUB_CHECK = '';
 const RELAY_URL = 'wss://golmok-relay.souohoo.workers.dev';  // 중계 서버 주소 (wss://...). 비면 기기끼리 직접 연결(P2P)만 사용 // 모임 암호 확인값(암호 자체가 아닌 해시). 빌드할 때 넣음. 비면 잠금 없음
 const MAX_SPEC = 10;                 // 관중 최대 인원
 const GAUGE_TIME = 0.9;              // 게이지가 가득 차는 시간(초)
